@@ -5,6 +5,7 @@ import {
   matches, InsertMatch, savedJobs, scoutHistory, InsertScoutHistory,
   companies, InsertCompany, events, InsertEvent, companyScores, InsertCompanyScore,
   conversations, InsertConversation, messages, InsertMessage,
+  autoScoutSettings,
   normalizeCompanyName
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -88,6 +89,13 @@ export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
 }
 
@@ -175,9 +183,14 @@ export async function getActiveCompanies(daysBack: number = 30) {
   
   const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
   
-  return await db.select().from(companies)
-    .where(gte(companies.lastSeenAt, cutoff))
-    .orderBy(desc(companies.talentNeedScore));
+  // Use raw SQL to avoid column name issues
+  const result = await db.execute(sql`
+    SELECT * FROM companies 
+    WHERE lastSeenAt >= ${cutoff}
+    ORDER BY talentNeedScore DESC
+  `);
+  
+  return result[0] as any[];
 }
 
 export async function updateCompanyScore(companyId: number, score: number) {
@@ -495,4 +508,104 @@ export async function getStats() {
     events: eventCount[0]?.count || 0,
     jobs: jobCount[0]?.count || 0,
   };
+}
+
+// ============== AUTO SCOUT SETTINGS ==============
+
+export async function getAutoScoutSettings(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const result = await db.select()
+    .from(autoScoutSettings)
+    .where(eq(autoScoutSettings.userId, userId))
+    .limit(1);
+
+  return result[0] || null;
+}
+
+export async function upsertAutoScoutSettings(userId: number, settings: {
+  enabled?: boolean;
+  frequency?: "daily" | "weekly" | "biweekly";
+  emailEnabled?: boolean;
+  emailAddress?: string;
+  sources?: string[];
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const existing = await getAutoScoutSettings(userId);
+
+  const data = {
+    enabled: settings.enabled !== undefined ? (settings.enabled ? 1 : 0) : undefined,
+    frequency: settings.frequency,
+    emailEnabled: settings.emailEnabled !== undefined ? (settings.emailEnabled ? 1 : 0) : undefined,
+    emailAddress: settings.emailAddress,
+    sources: settings.sources ? JSON.stringify(settings.sources) : undefined,
+    nextRunAt: settings.enabled ? calculateNextRunAt(settings.frequency || "weekly") : null,
+  };
+
+  // Remove undefined values
+  const cleanData = Object.fromEntries(
+    Object.entries(data).filter(([_, v]) => v !== undefined)
+  );
+
+  if (existing) {
+    await db.update(autoScoutSettings)
+      .set({ ...cleanData, updatedAt: new Date() })
+      .where(eq(autoScoutSettings.id, existing.id));
+    return { ...existing, ...cleanData };
+  } else {
+    await db.insert(autoScoutSettings).values({
+      userId,
+      enabled: data.enabled ?? 0,
+      frequency: data.frequency ?? "weekly",
+      emailEnabled: data.emailEnabled ?? 1,
+      emailAddress: data.emailAddress,
+      sources: data.sources ?? JSON.stringify(["google_jobs"]),
+      nextRunAt: data.nextRunAt,
+    });
+    return await getAutoScoutSettings(userId);
+  }
+}
+
+export async function getAutoScoutSettingsDueForRun() {
+  const db = await getDb();
+  if (!db) return [];
+
+  const now = new Date();
+  return await db.select()
+    .from(autoScoutSettings)
+    .where(
+      and(
+        eq(autoScoutSettings.enabled, 1),
+        sql`${autoScoutSettings.nextRunAt} <= ${now}`
+      )
+    );
+}
+
+export async function updateAutoScoutLastRun(settingsId: number, frequency: "daily" | "weekly" | "biweekly") {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.update(autoScoutSettings)
+    .set({
+      lastRunAt: new Date(),
+      nextRunAt: calculateNextRunAt(frequency),
+    })
+    .where(eq(autoScoutSettings.id, settingsId));
+}
+
+function calculateNextRunAt(frequency: "daily" | "weekly" | "biweekly"): Date {
+  const now = new Date();
+  switch (frequency) {
+    case "daily":
+      return new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    case "weekly":
+      return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    case "biweekly":
+      return new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    default:
+      return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  }
 }
