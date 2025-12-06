@@ -103,6 +103,7 @@ export async function scoutJobs(params: ScoutParams): Promise<ScoutResult[]> {
 
 /**
  * Google Jobs via Serper API
+ * Käyttää sekä tavallista hakua että Google Jobs -erikoishakua
  */
 async function scoutGoogleJobs(profile: Profile, maxResults: number): Promise<InsertJob[]> {
   const jobs: InsertJob[] = [];
@@ -125,77 +126,106 @@ async function scoutGoogleJobs(profile: Profile, maxResults: number): Promise<In
     console.error("[Scout] Profile parse error:", e);
   }
 
-  // Build search query
-  const searchTerms = [...preferredTitles.slice(0, 2), ...skills.slice(0, 2)].filter(Boolean);
-  const query = searchTerms.length > 0 ? searchTerms.join(" ") : "software developer";
+  // Build smarter search queries
   const location = preferredLocations[0] || "Helsinki";
+  const jobTitles = preferredTitles.length > 0 ? preferredTitles : ["kehittäjä", "developer"];
+  
+  // Search for each job title separately for better results
+  for (const title of jobTitles.slice(0, 3)) {
+    try {
+      // Use Serper's job search endpoint
+      const response = await fetch("https://google.serper.dev/search", {
+        method: "POST",
+        headers: {
+          "X-API-KEY": SERPER_API_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          q: `${title} avoimet työpaikat ${location}`,
+          gl: "fi",
+          hl: "fi",
+          num: 10,
+          type: "search",
+        }),
+      });
 
-  try {
-    const response = await fetch("https://google.serper.dev/search", {
-      method: "POST",
-      headers: {
-        "X-API-KEY": SERPER_API_KEY,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        q: `${query} työpaikka ${location}`,
-        gl: "fi",
-        hl: "fi",
-        num: Math.min(maxResults, 20),
-      }),
-    });
-
-    if (!response.ok) {
-      console.error(`[Scout] Serper API error: ${response.status}`);
-      return jobs;
-    }
-
-    const data = await response.json();
-    console.log("[Scout] Serper response:", JSON.stringify(data).slice(0, 500));
-
-    // Parse organic results
-    const organic = data.organic || [];
-    for (const result of organic.slice(0, maxResults)) {
-      // Try to extract company from title or snippet
-      const titleParts = result.title?.split(" - ") || [];
-      const company = titleParts.length > 1 ? titleParts[titleParts.length - 1] : "Yritys";
-      const title = titleParts[0] || result.title || "Työpaikka";
-
-      const job: InsertJob = {
-        externalId: `google-${Buffer.from(result.link || "").toString("base64").slice(0, 50)}`,
-        source: "google_jobs",
-        title: title,
-        company: company.trim(),
-        description: result.snippet || "",
-        location: location,
-        url: result.link || "",
-        postedAt: new Date(),
-      };
-      jobs.push(job);
-    }
-
-    // Also check for jobs in "jobs" field if present
-    if (data.jobs) {
-      for (const jobData of data.jobs.slice(0, maxResults - jobs.length)) {
-        const job: InsertJob = {
-          externalId: `google-job-${jobData.job_id || Date.now()}-${Math.random()}`,
-          source: "google_jobs",
-          title: jobData.title || "Työpaikka",
-          company: jobData.company_name || "Yritys",
-          description: jobData.description || jobData.snippet || "",
-          location: jobData.location || location,
-          url: jobData.link || jobData.apply_link || "",
-          postedAt: jobData.detected_extensions?.posted_at ? new Date() : new Date(),
-        };
-        jobs.push(job);
+      if (!response.ok) {
+        console.error(`[Scout] Serper API error: ${response.status}`);
+        continue;
       }
-    }
 
-  } catch (error) {
-    console.error("[Scout] Google Jobs fetch error:", error);
+      const data = await response.json();
+      console.log(`[Scout] Serper response for "${title}":`, JSON.stringify(data).slice(0, 300));
+
+      // Parse organic results - these are job listing pages
+      const organic = data.organic || [];
+      for (const result of organic.slice(0, 5)) {
+        // Skip if already added (by URL)
+        if (jobs.some(j => j.url === result.link)) continue;
+        
+        // Extract job info from title - usually "Job Title - Company Name"
+        const titleParts = (result.title || "").split(" - ");
+        let jobTitle = titleParts[0]?.trim() || title;
+        let company = titleParts.length > 1 ? titleParts[titleParts.length - 1]?.trim() : "";
+        
+        // Clean up common suffixes
+        company = company
+          .replace(/\| Duunitori$/i, "")
+          .replace(/\| Oikotie$/i, "")
+          .replace(/- Työpaikat$/i, "")
+          .replace(/Avoimet työpaikat$/i, "")
+          .trim();
+        
+        if (!company || company.length < 2) {
+          company = "Katso ilmoituksesta";
+        }
+
+        const job: InsertJob = {
+          externalId: `google-${Buffer.from(result.link || `${Date.now()}`).toString("base64").slice(0, 50)}`,
+          source: "google_jobs",
+          title: jobTitle,
+          company: company,
+          description: result.snippet || "",
+          location: location,
+          url: result.link || "",
+          postedAt: new Date(),
+        };
+        
+        // Only add if we have a valid URL
+        if (job.url && job.url.startsWith("http")) {
+          jobs.push(job);
+        }
+      }
+
+      // Also try to parse any job cards if present
+      if (data.jobs && Array.isArray(data.jobs)) {
+        for (const jobData of data.jobs) {
+          if (jobs.some(j => j.externalId?.includes(jobData.job_id))) continue;
+          
+          const job: InsertJob = {
+            externalId: `serper-job-${jobData.job_id || Date.now()}`,
+            source: "google_jobs",
+            title: jobData.title || title,
+            company: jobData.company_name || "Yritys",
+            description: jobData.description || jobData.snippet || "",
+            location: jobData.location || location,
+            url: jobData.apply_link || jobData.link || "",
+            postedAt: new Date(),
+          };
+          
+          if (job.url && job.url.startsWith("http")) {
+            jobs.push(job);
+          }
+        }
+      }
+
+    } catch (error) {
+      console.error(`[Scout] Google Jobs fetch error for "${title}":`, error);
+    }
   }
 
-  return jobs;
+  console.log(`[Scout] Found ${jobs.length} jobs total`);
+  return jobs.slice(0, maxResults);
 }
 
 /**

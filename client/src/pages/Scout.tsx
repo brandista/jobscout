@@ -224,10 +224,19 @@ export default function Scout() {
                       <p className="text-sm text-red-600 mt-1">{run.errorMessage}</p>
                     )}
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">
-                      Lähteet: {run.sources ? JSON.parse(run.sources).join(", ") : "N/A"}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">
+                        Lähteet: {run.sources ? JSON.parse(run.sources).join(", ") : "N/A"}
+                      </p>
+                    </div>
+                    {run.resultsCount > 0 && (
+                      <Link href="/jobs">
+                        <Button variant="outline" size="sm">
+                          Katso tulokset
+                        </Button>
+                      </Link>
+                    )}
                   </div>
                 </div>
               ))}
