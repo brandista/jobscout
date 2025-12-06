@@ -240,6 +240,26 @@ export const messages = mysqlTable("messages", {
 export type Message = typeof messages.$inferSelect;
 export type InsertMessage = typeof messages.$inferInsert;
 
+/**
+ * Auto Scout Settings - automaattinen työpaikkahaku ja email-notifikaatiot
+ */
+export const autoScoutSettings = mysqlTable("autoScoutSettings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  enabled: int("enabled").default(0).notNull(), // 0 = off, 1 = on (MySQL ei tue boolean)
+  frequency: mysqlEnum("frequency", ["daily", "weekly", "biweekly"]).default("weekly").notNull(),
+  emailEnabled: int("emailEnabled").default(1).notNull(),
+  emailAddress: varchar("emailAddress", { length: 320 }),
+  sources: text("sources"), // JSON array: ["google_jobs"]
+  lastRunAt: timestamp("lastRunAt"),
+  nextRunAt: timestamp("nextRunAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AutoScoutSettings = typeof autoScoutSettings.$inferSelect;
+export type InsertAutoScoutSettings = typeof autoScoutSettings.$inferInsert;
+
 // ============== HELPER ==============
 export function normalizeCompanyName(name: string): string {
   let normalized = name.toLowerCase().trim();
