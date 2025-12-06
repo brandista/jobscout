@@ -17,7 +17,9 @@ import {
   Plus,
   MessageSquare,
   Trash2,
-  Sparkles
+  Sparkles,
+  Search,
+  ExternalLink
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -144,6 +146,27 @@ export default function Agents() {
       setSelectedConversation(null);
       setMessages([]);
       refetchConversations();
+    },
+  });
+
+  // Company search for Sofia agent
+  const companySearchMutation = trpc.search.company.useMutation({
+    onSuccess: (data) => {
+      let resultText = `🔍 **Hakutulokset**\n\n`;
+      if (data.organic) {
+        data.organic.slice(0, 5).forEach((r: any) => {
+          resultText += `• **${r.title}**\n  ${r.snippet || ""}\n  [Avaa](${r.link})\n\n`;
+        });
+      }
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        role: "assistant",
+        content: resultText,
+        createdAt: new Date().toISOString(),
+      }]);
+    },
+    onError: (error) => {
+      toast.error("Haku epäonnistui: " + error.message);
     },
   });
 
@@ -506,6 +529,27 @@ export default function Agents() {
                           >
                             Esittele itsesi
                           </Button>
+                          {selectedAgent === "company_intel" && (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => {
+                                const company = prompt("Minkä yrityksen tietoja haluat hakea?");
+                                if (company) {
+                                  setMessages(prev => [...prev, {
+                                    id: Date.now(),
+                                    role: "user",
+                                    content: `Hae tietoja: ${company}`,
+                                    createdAt: new Date().toISOString(),
+                                  }]);
+                                  companySearchMutation.mutate({ companyName: company });
+                                }
+                              }}
+                            >
+                              <Search className="w-4 h-4 mr-2" />
+                              Hae yritystietoja
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ) : (
@@ -522,15 +566,32 @@ export default function Agents() {
                               <img src={AGENTS[selectedAgent].avatar} alt="" className="w-full h-full object-cover" />
                             </div>
                           )}
-                          <div
-                            className={cn(
-                              "max-w-[80%] rounded-2xl px-4 py-3",
-                              msg.role === "user"
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted"
+                          <div className="flex flex-col gap-1 max-w-[80%]">
+                            <div
+                              className={cn(
+                                "rounded-2xl px-4 py-3",
+                                msg.role === "user"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted"
+                              )}
+                            >
+                              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                            </div>
+                            {msg.role === "assistant" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="self-start text-xs text-muted-foreground hover:text-primary h-6 px-2"
+                                onClick={() => {
+                                  const query = msg.content.slice(0, 80).replace(/[^\w\sÄÖÅäöå]/g, ' ').trim();
+                                  window.open(`https://www.google.com/search?q=${encodeURIComponent(query)}`, '_blank');
+                                }}
+                              >
+                                <Search className="w-3 h-3 mr-1" />
+                                Hae Googlesta
+                                <ExternalLink className="w-3 h-3 ml-1" />
+                              </Button>
                             )}
-                          >
-                            <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                           </div>
                         </div>
                       ))

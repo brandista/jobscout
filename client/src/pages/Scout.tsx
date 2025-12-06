@@ -11,9 +11,9 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 
 const AVAILABLE_SOURCES = [
-  { id: "tyomarkkinatori", name: "TE-palvelut / Työmarkkinatori", description: "Virallinen työnhakupalvelu" },
-  { id: "duunitori", name: "Duunitori", description: "Suomen suosituin työpaikkasivusto" },
-  { id: "oikotie", name: "Oikotie Työpaikat", description: "Schibsted-konsernin työpaikkasivusto" },
+  { id: "google_jobs", name: "Google Jobs", description: "Google-haku työpaikoista Serper API:lla" },
+  { id: "linkedin", name: "LinkedIn (tulossa)", description: "LinkedIn työpaikat - tulossa pian", disabled: true },
+  { id: "indeed", name: "Indeed (tulossa)", description: "Indeed työpaikat - tulossa pian", disabled: true },
   { id: "demo", name: "Demo-data", description: "Testidataa kehitystä varten" },
 ];
 
@@ -26,7 +26,7 @@ export default function Scout() {
   );
   const scoutMutation = trpc.scout.run.useMutation();
   const [isRunning, setIsRunning] = useState(false);
-  const [selectedSources, setSelectedSources] = useState<string[]>(["tyomarkkinatori", "duunitori"]);
+  const [selectedSources, setSelectedSources] = useState<string[]>(["google_jobs"]);
 
   const toggleSource = (sourceId: string) => {
     setSelectedSources(prev => 
@@ -134,16 +134,19 @@ export default function Scout() {
                   {AVAILABLE_SOURCES.map((source) => (
                     <div
                       key={source.id}
-                      className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                        selectedSources.includes(source.id)
-                          ? "border-primary bg-primary/5"
-                          : "border-border hover:bg-accent/50"
+                      className={`flex items-start gap-3 p-3 border rounded-lg transition-colors ${
+                        source.disabled 
+                          ? "opacity-50 cursor-not-allowed"
+                          : selectedSources.includes(source.id)
+                            ? "border-primary bg-primary/5 cursor-pointer"
+                            : "border-border hover:bg-accent/50 cursor-pointer"
                       }`}
-                      onClick={() => toggleSource(source.id)}
+                      onClick={() => !source.disabled && toggleSource(source.id)}
                     >
                       <Checkbox
                         checked={selectedSources.includes(source.id)}
-                        onCheckedChange={() => toggleSource(source.id)}
+                        onCheckedChange={() => !source.disabled && toggleSource(source.id)}
+                        disabled={source.disabled}
                       />
                       <div className="flex-1">
                         <p className="text-sm font-medium">{source.name}</p>

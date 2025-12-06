@@ -619,6 +619,72 @@ export const appRouter = router({
       }),
   }),
 
+  // ============== SEARCH (Serper Google Search) ==============
+  search: router({
+    google: protectedProcedure
+      .input(z.object({
+        query: z.string().min(1).max(200),
+        num: z.number().min(1).max(10).optional().default(5),
+      }))
+      .mutation(async ({ input }) => {
+        const SERPER_API_KEY = process.env.SERPER_API_KEY;
+        if (!SERPER_API_KEY) {
+          throw new Error("SERPER_API_KEY not configured");
+        }
+
+        const response = await fetch("https://google.serper.dev/search", {
+          method: "POST",
+          headers: {
+            "X-API-KEY": SERPER_API_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            q: input.query,
+            gl: "fi",
+            hl: "fi",
+            num: input.num,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Serper API error: ${response.status}`);
+        }
+
+        return await response.json();
+      }),
+
+    company: protectedProcedure
+      .input(z.object({
+        companyName: z.string().min(1).max(100),
+      }))
+      .mutation(async ({ input }) => {
+        const SERPER_API_KEY = process.env.SERPER_API_KEY;
+        if (!SERPER_API_KEY) {
+          throw new Error("SERPER_API_KEY not configured");
+        }
+
+        const response = await fetch("https://google.serper.dev/search", {
+          method: "POST",
+          headers: {
+            "X-API-KEY": SERPER_API_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            q: `${input.companyName} yritys suomi`,
+            gl: "fi",
+            hl: "fi",
+            num: 10,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Serper API error: ${response.status}`);
+        }
+
+        return await response.json();
+      }),
+  }),
+
   // ============== STATS ==============
   stats: router({
     get: protectedProcedure.query(async () => {
