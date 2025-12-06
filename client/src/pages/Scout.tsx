@@ -1,0 +1,255 @@
+import DashboardLayout from "@/components/DashboardLayout";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { trpc } from "@/lib/trpc";
+import { Loader2, Play, History, TrendingUp, CheckCircle2, AlertCircle, Globe } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { Link } from "wouter";
+
+const AVAILABLE_SOURCES = [
+  { id: "tyomarkkinatori", name: "TE-palvelut / Työmarkkinatori", description: "Virallinen työnhakupalvelu" },
+  { id: "duunitori", name: "Duunitori", description: "Suomen suosituin työpaikkasivusto" },
+  { id: "oikotie", name: "Oikotie Työpaikat", description: "Schibsted-konsernin työpaikkasivusto" },
+  { id: "demo", name: "Demo-data", description: "Testidataa kehitystä varten" },
+];
+
+export default function Scout() {
+  const { user, loading: authLoading } = useAuth();
+  const { data: profile } = trpc.profile.get.useQuery(undefined, { enabled: !!user });
+  const { data: history, refetch: refetchHistory } = trpc.scout.history.useQuery(
+    { limit: 10 },
+    { enabled: !!user }
+  );
+  const scoutMutation = trpc.scout.run.useMutation();
+  const [isRunning, setIsRunning] = useState(false);
+  const [selectedSources, setSelectedSources] = useState<string[]>(["tyomarkkinatori", "duunitori"]);
+
+  const toggleSource = (sourceId: string) => {
+    setSelectedSources(prev => 
+      prev.includes(sourceId) 
+        ? prev.filter(s => s !== sourceId)
+        : [...prev, sourceId]
+    );
+  };
+
+  const handleRunScout = async () => {
+    if (!profile) {
+      toast.error("Luo ensin profiili ennen scoutauksen aloittamista!");
+      return;
+    }
+
+    if (selectedSources.length === 0) {
+      toast.error("Valitse vähintään yksi lähde!");
+      return;
+    }
+
+    setIsRunning(true);
+    try {
+      const result = await scoutMutation.mutateAsync({
+        sources: selectedSources,
+        maxResults: 50,
+      });
+
+      toast.success(
+        `Scoutaus valmis! Löydettiin ${result.totalJobs} työpaikkaa, joista ${result.newMatches} uutta matchia.`
+      );
+      refetchHistory();
+    } catch (error) {
+      toast.error("Scoutaus epäonnistui. Yritä uudelleen.");
+      console.error(error);
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  if (authLoading) {
+    return (
+      <DashboardLayout>
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout>
+    <div className="container max-w-4xl py-8">
+      <div className="flex items-center gap-3 mb-6">
+        <TrendingUp className="w-8 h-8 text-primary" />
+        <h1 className="text-3xl font-bold">Työpaikka-Scoutaus</h1>
+      </div>
+
+      {/* Scout Action Card */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Aloita Scoutaus</CardTitle>
+          <CardDescription>
+            Agentti etsii sinulle sopivia työpaikkoja profiilisi perusteella
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!profile ? (
+            <div className="flex items-start gap-3 p-4 bg-yellow-50 dark:bg-yellow-950 rounded-lg border border-yellow-200 dark:border-yellow-800">
+              <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium text-yellow-900 dark:text-yellow-100">
+                  Profiili puuttuu
+                </p>
+                <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                  Luo ensin ammatillinen profiili, jotta agentti voi etsiä sinulle sopivia työpaikkoja.
+                </p>
+                <Link href="/profile">
+                  <Button variant="outline" size="sm" className="mt-3">
+                    Luo Profiili
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
+                <CheckCircle2 className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-medium text-blue-900 dark:text-blue-100">
+                    Profiili valmis
+                  </p>
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                    Agentti käyttää profiiliasi etsiäkseen sinulle sopivia työpaikkoja.
+                  </p>
+                </div>
+              </div>
+
+              {/* Source Selection */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-muted-foreground" />
+                  <Label className="text-sm font-medium">Valitse lähteet</Label>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {AVAILABLE_SOURCES.map((source) => (
+                    <div
+                      key={source.id}
+                      className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                        selectedSources.includes(source.id)
+                          ? "border-primary bg-primary/5"
+                          : "border-border hover:bg-accent/50"
+                      }`}
+                      onClick={() => toggleSource(source.id)}
+                    >
+                      <Checkbox
+                        checked={selectedSources.includes(source.id)}
+                        onCheckedChange={() => toggleSource(source.id)}
+                      />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{source.name}</p>
+                        <p className="text-xs text-muted-foreground">{source.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <Button
+                onClick={handleRunScout}
+                disabled={isRunning || selectedSources.length === 0}
+                size="lg"
+                className="w-full"
+              >
+                {isRunning ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Scoutataan työpaikkoja...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-5 h-5 mr-2" />
+                    Käynnistä Scoutaus ({selectedSources.length} lähdettä)
+                  </>
+                )}
+              </Button>
+
+              <p className="text-sm text-muted-foreground text-center">
+                Scoutaus kestää muutaman sekunnin. Agentti etsii työpaikkoja valituista lähteistä ja
+                laskee matchaus-scoret profiilisi perusteella.
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Scout History */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <History className="w-5 h-5" />
+            <CardTitle>Scoutaus-Historia</CardTitle>
+          </div>
+          <CardDescription>Aiemmat scoutaus-ajot</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!history || history.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              Ei scoutaus-historiaa vielä. Aloita ensimmäinen scoutaus yllä!
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {history.map((run) => (
+                <div
+                  key={run.id}
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-medium">
+                        {new Date(run.executedAt).toLocaleString("fi-FI")}
+                      </span>
+                      {run.status === "success" ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-red-600" />
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {run.resultsCount} työpaikkaa löydetty, {run.newMatchesCount} matchit
+                    </p>
+                    {run.errorMessage && (
+                      <p className="text-sm text-red-600 mt-1">{run.errorMessage}</p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">
+                      Lähteet: {run.sources ? JSON.parse(run.sources).join(", ") : "N/A"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Info about future features */}
+      <Card className="mt-6 border-dashed">
+        <CardHeader>
+          <CardTitle className="text-lg">Tulevat Ominaisuudet</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-2 text-sm text-muted-foreground">
+            <li>• Automaattinen scoutaus (päivittäin/viikottain)</li>
+            <li>• LinkedIn Jobs API -integraatio</li>
+            <li>• Indeed API -integraatio</li>
+            <li>• Notifikaatiot uusista matcheista</li>
+            <li>• Piilossa olevien työpaikkojen etsintä</li>
+            <li>• Monster.fi integraatio</li>
+          </ul>
+        </CardContent>
+      </Card>
+    </div>
+    </DashboardLayout>
+  );
+}

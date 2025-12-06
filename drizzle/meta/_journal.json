@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1764673647488,
+      "tag": "0000_redundant_colossus",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1764673709067,
+      "tag": "0001_sleepy_sir_ram",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1764782123915,
+      "tag": "0002_petite_the_fallen",
+      "breakpoints": true
+    }
+  ]
+}
