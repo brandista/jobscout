@@ -4,10 +4,12 @@ import type { Profile, InsertJob } from "../drizzle/schema";
  * Scoutaus-agentti työpaikkojen hakuun eri lähteistä
  * 
  * Tuetut lähteet:
- * - tyomarkkinatori: TE-palvelujen Työmarkkinatori API (ilmainen)
- * - duunitori: Duunitori.fi scraping
- * - oikotie: Oikotie Työpaikat scraping
+ * - google_jobs: Google Jobs haku Serper API:n kautta
  * - demo: Demo-data testaukseen
+ * 
+ * Tulossa:
+ * - linkedin: LinkedIn Jobs API
+ * - indeed: Indeed API
  */
 
 export interface ScoutParams {
@@ -26,9 +28,23 @@ export interface ScoutResult {
  * Pääfunktio työpaikkojen scoutaukseen
  */
 export async function scoutJobs(params: ScoutParams): Promise<ScoutResult[]> {
-  const { profile, sources = ["tyomarkkinatori", "duunitori"], maxResults = 50 } = params;
+  const { profile, sources = ["google_jobs"], maxResults = 50 } = params;
   const results: ScoutResult[] = [];
   const perSourceLimit = Math.ceil(maxResults / sources.length);
+
+  // Google Jobs via Serper API
+  if (sources.includes("google_jobs")) {
+    try {
+      const jobs = await scoutGoogleJobs(profile, perSourceLimit);
+      results.push({
+        jobs,
+        source: "google_jobs",
+        count: jobs.length,
+      });
+    } catch (error) {
+      console.error("[Scout] Google Jobs error:", error);
+    }
+  }
 
   // Työmarkkinatori (TE-palvelut)
   if (sources.includes("tyomarkkinatori")) {
@@ -83,6 +99,103 @@ export async function scoutJobs(params: ScoutParams): Promise<ScoutResult[]> {
   }
 
   return results;
+}
+
+/**
+ * Google Jobs via Serper API
+ */
+async function scoutGoogleJobs(profile: Profile, maxResults: number): Promise<InsertJob[]> {
+  const jobs: InsertJob[] = [];
+  
+  const SERPER_API_KEY = process.env.SERPER_API_KEY;
+  if (!SERPER_API_KEY) {
+    console.error("[Scout] SERPER_API_KEY not configured");
+    return jobs;
+  }
+
+  let skills: string[] = [];
+  let preferredTitles: string[] = [];
+  let preferredLocations: string[] = [];
+  
+  try {
+    if (profile.skills) skills = JSON.parse(profile.skills);
+    if (profile.preferredJobTitles) preferredTitles = JSON.parse(profile.preferredJobTitles);
+    if (profile.preferredLocations) preferredLocations = JSON.parse(profile.preferredLocations);
+  } catch (e) {
+    console.error("[Scout] Profile parse error:", e);
+  }
+
+  // Build search query
+  const searchTerms = [...preferredTitles.slice(0, 2), ...skills.slice(0, 2)].filter(Boolean);
+  const query = searchTerms.length > 0 ? searchTerms.join(" ") : "software developer";
+  const location = preferredLocations[0] || "Helsinki";
+
+  try {
+    const response = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": SERPER_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        q: `${query} työpaikka ${location}`,
+        gl: "fi",
+        hl: "fi",
+        num: Math.min(maxResults, 20),
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`[Scout] Serper API error: ${response.status}`);
+      return jobs;
+    }
+
+    const data = await response.json();
+    console.log("[Scout] Serper response:", JSON.stringify(data).slice(0, 500));
+
+    // Parse organic results
+    const organic = data.organic || [];
+    for (const result of organic.slice(0, maxResults)) {
+      // Try to extract company from title or snippet
+      const titleParts = result.title?.split(" - ") || [];
+      const company = titleParts.length > 1 ? titleParts[titleParts.length - 1] : "Yritys";
+      const title = titleParts[0] || result.title || "Työpaikka";
+
+      const job: InsertJob = {
+        externalId: `google-${Buffer.from(result.link || "").toString("base64").slice(0, 50)}`,
+        source: "google_jobs",
+        title: title,
+        company: company.trim(),
+        description: result.snippet || "",
+        location: location,
+        url: result.link || "",
+        postedAt: new Date(),
+      };
+      jobs.push(job);
+    }
+
+    // Also check for jobs in "jobs" field if present
+    if (data.jobs) {
+      for (const jobData of data.jobs.slice(0, maxResults - jobs.length)) {
+        const job: InsertJob = {
+          externalId: `google-job-${jobData.job_id || Date.now()}-${Math.random()}`,
+          source: "google_jobs",
+          title: jobData.title || "Työpaikka",
+          company: jobData.company_name || "Yritys",
+          description: jobData.description || jobData.snippet || "",
+          location: jobData.location || location,
+          url: jobData.link || jobData.apply_link || "",
+          postedAt: jobData.detected_extensions?.posted_at ? new Date() : new Date(),
+        };
+        jobs.push(job);
+      }
+    }
+
+  } catch (error) {
+    console.error("[Scout] Google Jobs fetch error:", error);
+  }
+
+  return jobs;
 }
 
 /**
