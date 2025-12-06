@@ -183,9 +183,14 @@ export async function getActiveCompanies(daysBack: number = 30) {
   
   const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
   
-  return await db.select().from(companies)
-    .where(gte(companies.lastSeenAt, cutoff))
-    .orderBy(desc(companies.talentNeedScore));
+  // Use raw SQL to avoid column name issues
+  const result = await db.execute(sql`
+    SELECT * FROM companies 
+    WHERE lastSeenAt >= ${cutoff}
+    ORDER BY talentNeedScore DESC
+  `);
+  
+  return result[0] as any[];
 }
 
 export async function updateCompanyScore(companyId: number, score: number) {
