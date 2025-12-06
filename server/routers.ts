@@ -1013,7 +1013,7 @@ export const appRouter = router({
         enabled: z.boolean(),
         frequency: z.enum(["daily", "weekly", "biweekly"]),
         emailEnabled: z.boolean(),
-        emailAddress: z.string().email().optional(),
+        emailAddress: z.string().optional(),
         sources: z.array(z.string()).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
