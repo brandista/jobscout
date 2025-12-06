@@ -17,7 +17,9 @@ import {
   Plus,
   MessageSquare,
   Trash2,
-  Sparkles
+  Sparkles,
+  Search,
+  ExternalLink
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -144,6 +146,46 @@ export default function Agents() {
       setSelectedConversation(null);
       setMessages([]);
       refetchConversations();
+    },
+  });
+
+  // Company search mutation (for Sofia)
+  const companySearchMutation = trpc.search.company.useMutation({
+    onSuccess: (data) => {
+      // Format search results as a message
+      let resultText = `🔍 **Hakutulokset: ${data.companyName}**\n\n`;
+      
+      if (data.generalInfo?.organic) {
+        resultText += "**Yleistiedot:**\n";
+        data.generalInfo.organic.slice(0, 3).forEach((r: any) => {
+          resultText += `• [${r.title}](${r.link})\n  ${r.snippet || ""}\n\n`;
+        });
+      }
+      
+      if (data.linkedIn?.organic) {
+        resultText += "**LinkedIn:**\n";
+        data.linkedIn.organic.slice(0, 2).forEach((r: any) => {
+          resultText += `• [${r.title}](${r.link})\n`;
+        });
+        resultText += "\n";
+      }
+      
+      if (data.reviews?.organic) {
+        resultText += "**Arvostelut:**\n";
+        data.reviews.organic.slice(0, 2).forEach((r: any) => {
+          resultText += `• [${r.title}](${r.link})\n  ${r.snippet || ""}\n`;
+        });
+      }
+
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        role: "assistant",
+        content: resultText,
+        createdAt: new Date().toISOString(),
+      }]);
+    },
+    onError: (error) => {
+      toast.error("Yrityshaku epäonnistui: " + error.message);
     },
   });
 
@@ -506,6 +548,27 @@ export default function Agents() {
                           >
                             Esittele itsesi
                           </Button>
+                          {selectedAgent === "company_intel" && (
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => {
+                                const company = prompt("Minkä yrityksen tietoja haluat hakea?");
+                                if (company) {
+                                  setMessages(prev => [...prev, {
+                                    id: Date.now(),
+                                    role: "user",
+                                    content: `Hae tietoja yrityksestä: ${company}`,
+                                    createdAt: new Date().toISOString(),
+                                  }]);
+                                  companySearchMutation.mutate({ companyName: company });
+                                }
+                              }}
+                            >
+                              <Search className="w-4 h-4 mr-2" />
+                              Hae yritystietoja
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ) : (
@@ -522,15 +585,33 @@ export default function Agents() {
                               <img src={AGENTS[selectedAgent].avatar} alt="" className="w-full h-full object-cover" />
                             </div>
                           )}
-                          <div
-                            className={cn(
-                              "max-w-[80%] rounded-2xl px-4 py-3",
-                              msg.role === "user"
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted"
+                          <div className="flex flex-col gap-2 max-w-[80%]">
+                            <div
+                              className={cn(
+                                "rounded-2xl px-4 py-3",
+                                msg.role === "user"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-muted"
+                              )}
+                            >
+                              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                            </div>
+                            {msg.role === "assistant" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="self-start text-xs text-muted-foreground hover:text-primary"
+                                onClick={() => {
+                                  // Extract key terms from the message for Google search
+                                  const searchQuery = msg.content.slice(0, 100).replace(/[^\w\sÄÖÅäöå]/g, ' ').trim();
+                                  window.open(`https://www.google.com/search?q=${encodeURIComponent(searchQuery)}`, '_blank');
+                                }}
+                              >
+                                <Search className="w-3 h-3 mr-1" />
+                                Hae Googlesta
+                                <ExternalLink className="w-3 h-3 ml-1" />
+                              </Button>
                             )}
-                          >
-                            <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                           </div>
                         </div>
                       ))

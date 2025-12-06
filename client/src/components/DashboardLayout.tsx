@@ -20,7 +20,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { getLoginUrl } from "@/const";
+// getLoginUrl removed - using /login route instead
 import { useIsMobile } from "@/hooks/useMobile";
 import { 
   Home, 
@@ -55,8 +55,10 @@ const MAX_WIDTH = 400;
 
 export default function DashboardLayout({
   children,
+  allowGuest = false,
 }: {
   children: React.ReactNode;
+  allowGuest?: boolean;
 }) {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -72,7 +74,7 @@ export default function DashboardLayout({
     return <DashboardLayoutSkeleton />
   }
 
-  if (!user) {
+  if (!user && !allowGuest) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">
@@ -86,7 +88,7 @@ export default function DashboardLayout({
           </div>
           <Button
             onClick={() => {
-              window.location.href = getLoginUrl();
+              window.location.href = '/login';
             }}
             size="lg"
             className="w-full shadow-lg hover:shadow-xl transition-all"

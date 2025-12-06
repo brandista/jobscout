@@ -380,6 +380,121 @@ export const appRouter = router({
         return await getScoutHistoryByUserId(ctx.user.id, input.limit);
       }),
 
+    // ============== AUTO SCOUT SETTINGS ==============
+    getAutoScoutSettings: protectedProcedure.query(async ({ ctx }) => {
+      const { getDb } = await import("./db");
+      const db = await getDb();
+      if (!db) return null;
+
+      const { autoScoutSettings } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+
+      const result = await db
+        .select()
+        .from(autoScoutSettings)
+        .where(eq(autoScoutSettings.userId, ctx.user.id))
+        .limit(1);
+
+      return result.length > 0 ? result[0] : null;
+    }),
+
+    updateAutoScoutSettings: protectedProcedure
+      .input(z.object({
+        enabled: z.boolean(),
+        frequency: z.enum(["daily", "weekly", "biweekly"]).optional(),
+        emailEnabled: z.boolean().optional(),
+        emailAddress: z.string().email().optional().nullable(),
+        sources: z.array(z.string()).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+
+        const { autoScoutSettings, users } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+
+        // Get user email as default
+        const userResult = await db.select().from(users).where(eq(users.id, ctx.user.id)).limit(1);
+        const userEmail = userResult[0]?.email;
+
+        // Check if settings exist
+        const existing = await db
+          .select()
+          .from(autoScoutSettings)
+          .where(eq(autoScoutSettings.userId, ctx.user.id))
+          .limit(1);
+
+        const now = new Date();
+        let nextRun = new Date();
+        
+        // Calculate next run time based on frequency
+        if (input.enabled) {
+          const freq = input.frequency || "weekly";
+          switch (freq) {
+            case "daily":
+              nextRun.setDate(nextRun.getDate() + 1);
+              break;
+            case "weekly":
+              nextRun.setDate(nextRun.getDate() + 7);
+              break;
+            case "biweekly":
+              nextRun.setDate(nextRun.getDate() + 14);
+              break;
+          }
+          nextRun.setHours(8, 0, 0, 0);
+        }
+
+        const settingsData = {
+          enabled: input.enabled ? 1 : 0,
+          frequency: input.frequency || "weekly",
+          emailEnabled: input.emailEnabled !== false ? 1 : 0,
+          emailAddress: input.emailAddress || userEmail || null,
+          sources: JSON.stringify(input.sources || ["google_jobs"]),
+          nextRunAt: input.enabled ? nextRun : null,
+        };
+
+        if (existing.length > 0) {
+          await db
+            .update(autoScoutSettings)
+            .set(settingsData)
+            .where(eq(autoScoutSettings.userId, ctx.user.id));
+        } else {
+          await db.insert(autoScoutSettings).values({
+            userId: ctx.user.id,
+            ...settingsData,
+          });
+
+          // Send welcome email if enabling for first time
+          if (input.enabled && (input.emailAddress || userEmail)) {
+            const { sendAutoScoutWelcomeEmail } = await import("./email");
+            await sendAutoScoutWelcomeEmail(
+              input.emailAddress || userEmail || "",
+              userResult[0]?.name || undefined,
+              input.frequency || "weekly"
+            );
+          }
+        }
+
+        return { success: true };
+      }),
+
+    // Cron endpoint - called by external scheduler (e.g., Railway cron, Vercel cron)
+    runAutoScoutCron: publicProcedure
+      .input(z.object({
+        secret: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        // Verify cron secret
+        const cronSecret = process.env.CRON_SECRET || "jobscout-cron-2024";
+        if (input.secret !== cronSecret) {
+          throw new Error("Unauthorized");
+        }
+
+        const { runAutoScout } = await import("./auto-scout");
+        return await runAutoScout();
+      }),
+
     fetchNews: protectedProcedure
       .input(z.object({
         daysBack: z.number().optional().default(14),
@@ -619,12 +734,463 @@ export const appRouter = router({
       }),
   }),
 
+  // ============== SEARCH (Serper Google Search) ==============
+  search: router({
+    google: protectedProcedure
+      .input(z.object({
+        query: z.string().min(1).max(200),
+        num: z.number().min(1).max(10).optional().default(5),
+      }))
+      .mutation(async ({ input }) => {
+        const SERPER_API_KEY = process.env.SERPER_API_KEY;
+        if (!SERPER_API_KEY) {
+          throw new Error("SERPER_API_KEY not configured");
+        }
+
+        const response = await fetch("https://google.serper.dev/search", {
+          method: "POST",
+          headers: {
+            "X-API-KEY": SERPER_API_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            q: input.query,
+            gl: "fi",
+            hl: "fi",
+            num: input.num,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Serper API error: ${response.status}`);
+        }
+
+        return await response.json();
+      }),
+
+    company: protectedProcedure
+      .input(z.object({
+        companyName: z.string().min(1).max(100),
+      }))
+      .mutation(async ({ input }) => {
+        const SERPER_API_KEY = process.env.SERPER_API_KEY;
+        if (!SERPER_API_KEY) {
+          throw new Error("SERPER_API_KEY not configured");
+        }
+
+        const response = await fetch("https://google.serper.dev/search", {
+          method: "POST",
+          headers: {
+            "X-API-KEY": SERPER_API_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            q: `${input.companyName} yritys suomi`,
+            gl: "fi",
+            hl: "fi",
+            num: 10,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Serper API error: ${response.status}`);
+        }
+
+        return await response.json();
+      }),
+
+    // Kattava yritystiedustelu - hakee useasta lähteestä
+    companyIntel: protectedProcedure
+      .input(z.object({
+        companyName: z.string().min(1).max(100),
+      }))
+      .mutation(async ({ input }) => {
+        const SERPER_API_KEY = process.env.SERPER_API_KEY;
+        if (!SERPER_API_KEY) {
+          throw new Error("SERPER_API_KEY not configured");
+        }
+
+        const companyName = input.companyName.trim();
+
+        // Helper function for Serper searches
+        const searchSerper = async (query: string, num: number = 10) => {
+          const response = await fetch("https://google.serper.dev/search", {
+            method: "POST",
+            headers: {
+              "X-API-KEY": SERPER_API_KEY,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              q: query,
+              gl: "fi",
+              hl: "fi",
+              num,
+            }),
+          });
+          if (!response.ok) return null;
+          return await response.json();
+        };
+
+        // Parallel searches for different intel categories
+        const [
+          basicInfo,
+          jobsInfo,
+          newsInfo,
+          financeInfo,
+          reviewsInfo,
+        ] = await Promise.all([
+          // 1. Perustiedot - toimiala, koko, sijainti
+          searchSerper(`"${companyName}" yritys toimiala henkilöstö suomi`, 5),
+          
+          // 2. Rekrytointi - avoimet paikat, rekrytointitilanne
+          searchSerper(`"${companyName}" avoimet työpaikat rekrytointi 2024 2025`, 8),
+          
+          // 3. Uutiset - rahoitus, kasvu, YT, muutokset
+          searchSerper(`"${companyName}" uutiset rahoitus kasvu YT irtisanominen 2024 2025`, 8),
+          
+          // 4. Taloustiedot - liikevaihto, tulos
+          searchSerper(`"${companyName}" liikevaihto tulos talous finder`, 5),
+          
+          // 5. Työntekijäarviot
+          searchSerper(`"${companyName}" työntekijä arvostelu kokemuksia glassdoor`, 5),
+        ]);
+
+        // Process and structure the results
+        const processResults = (data: any) => {
+          if (!data?.organic) return [];
+          return data.organic.map((r: any) => ({
+            title: r.title || "",
+            snippet: r.snippet || "",
+            link: r.link || "",
+            date: r.date || null,
+          }));
+        };
+
+        // Extract signals from news
+        const extractSignals = (newsResults: any[]) => {
+          const signals: { type: string; text: string; sentiment: "positive" | "negative" | "neutral" }[] = [];
+          
+          for (const news of newsResults) {
+            const text = `${news.title} ${news.snippet}`.toLowerCase();
+            
+            if (text.includes("rahoitus") || text.includes("sijoitus") || text.includes("miljoonaa euroa")) {
+              signals.push({ type: "funding", text: news.title, sentiment: "positive" });
+            }
+            if (text.includes("kasvaa") || text.includes("laajent") || text.includes("uusi toimipiste")) {
+              signals.push({ type: "growth", text: news.title, sentiment: "positive" });
+            }
+            if (text.includes("rekrytoi") || text.includes("palkkaa") || text.includes("avoimia paikkoja")) {
+              signals.push({ type: "hiring", text: news.title, sentiment: "positive" });
+            }
+            if (text.includes("yt-neuvottelu") || text.includes("irtisano") || text.includes("lomautta")) {
+              signals.push({ type: "layoffs", text: news.title, sentiment: "negative" });
+            }
+            if (text.includes("yrityskauppa") || text.includes("ostaa") || text.includes("fuusio")) {
+              signals.push({ type: "acquisition", text: news.title, sentiment: "neutral" });
+            }
+          }
+          
+          return signals.slice(0, 10);
+        };
+
+        // Calculate hiring score based on job results
+        const calculateHiringScore = (jobResults: any[]) => {
+          let score = 50; // Base score
+          const jobCount = jobResults.length;
+          
+          if (jobCount >= 5) score += 30;
+          else if (jobCount >= 3) score += 20;
+          else if (jobCount >= 1) score += 10;
+          
+          // Check for recent dates
+          const recentJobs = jobResults.filter(j => {
+            const text = `${j.title} ${j.snippet}`.toLowerCase();
+            return text.includes("2025") || text.includes("2024") || text.includes("tänään") || text.includes("viikko");
+          });
+          
+          if (recentJobs.length >= 3) score += 20;
+          
+          return Math.min(score, 100);
+        };
+
+        const basicResults = processResults(basicInfo);
+        const jobResults = processResults(jobsInfo);
+        const newsResults = processResults(newsInfo);
+        const financeResults = processResults(financeInfo);
+        const reviewResults = processResults(reviewsInfo);
+        
+        const signals = extractSignals(newsResults);
+        const hiringScore = calculateHiringScore(jobResults);
+
+        // Determine overall sentiment
+        const positiveSignals = signals.filter(s => s.sentiment === "positive").length;
+        const negativeSignals = signals.filter(s => s.sentiment === "negative").length;
+        let overallSentiment: "positive" | "negative" | "neutral" = "neutral";
+        if (positiveSignals > negativeSignals + 1) overallSentiment = "positive";
+        if (negativeSignals > positiveSignals) overallSentiment = "negative";
+
+        return {
+          companyName,
+          timestamp: new Date().toISOString(),
+          
+          // Scores
+          hiringScore,
+          overallSentiment,
+          
+          // Signals
+          signals,
+          
+          // Categorized results
+          sections: {
+            basic: {
+              title: "Perustiedot",
+              results: basicResults,
+            },
+            jobs: {
+              title: "Rekrytointi & Avoimet paikat",
+              results: jobResults,
+              count: jobResults.length,
+            },
+            news: {
+              title: "Uutiset & Ajankohtaista",
+              results: newsResults,
+            },
+            finance: {
+              title: "Taloustiedot",
+              results: financeResults,
+            },
+            reviews: {
+              title: "Työntekijäkokemukset",
+              results: reviewResults,
+            },
+          },
+          
+          // Knowledge graph if available
+          knowledgeGraph: basicInfo?.knowledgeGraph || null,
+        };
+      }),
+  }),
+
   // ============== STATS ==============
   stats: router({
     get: protectedProcedure.query(async () => {
       const { getStats } = await import("./db");
       return await getStats();
     }),
+  }),
+
+  // ============== AUTO SCOUT ==============
+  autoScout: router({
+    getSettings: protectedProcedure.query(async ({ ctx }) => {
+      const { getAutoScoutSettings } = await import("./db");
+      const settings = await getAutoScoutSettings(ctx.user.id);
+      
+      if (!settings) {
+        return {
+          enabled: false,
+          frequency: "weekly" as const,
+          emailEnabled: true,
+          emailAddress: ctx.user.email || "",
+          sources: ["google_jobs"],
+          lastRunAt: null,
+          nextRunAt: null,
+        };
+      }
+      
+      return {
+        enabled: settings.enabled === 1,
+        frequency: settings.frequency,
+        emailEnabled: settings.emailEnabled === 1,
+        emailAddress: settings.emailAddress || ctx.user.email || "",
+        sources: settings.sources ? JSON.parse(settings.sources) : ["google_jobs"],
+        lastRunAt: settings.lastRunAt,
+        nextRunAt: settings.nextRunAt,
+      };
+    }),
+
+    updateSettings: protectedProcedure
+      .input(z.object({
+        enabled: z.boolean(),
+        frequency: z.enum(["daily", "weekly", "biweekly"]),
+        emailEnabled: z.boolean(),
+        emailAddress: z.string().optional(),
+        sources: z.array(z.string()).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        console.log("[AutoScout] updateSettings called with:", JSON.stringify(input));
+        console.log("[AutoScout] User:", ctx.user.id, ctx.user.email);
+        
+        try {
+          const { upsertAutoScoutSettings } = await import("./db");
+          const { sendAutoScoutWelcomeEmail } = await import("./email");
+          
+          console.log("[AutoScout] Calling upsertAutoScoutSettings...");
+          const result = await upsertAutoScoutSettings(ctx.user.id, {
+            enabled: input.enabled,
+            frequency: input.frequency,
+            emailEnabled: input.emailEnabled,
+            emailAddress: input.emailAddress || ctx.user.email || undefined,
+            sources: input.sources,
+          });
+          console.log("[AutoScout] upsertAutoScoutSettings result:", result);
+
+          // Send welcome email if just enabled
+          if (input.enabled && input.emailEnabled && (input.emailAddress || ctx.user.email)) {
+            console.log("[AutoScout] Sending welcome email...");
+            await sendAutoScoutWelcomeEmail(
+              input.emailAddress || ctx.user.email!,
+              ctx.user.name || undefined,
+              input.frequency
+            );
+          }
+
+          return result;
+        } catch (error: any) {
+          console.error("[AutoScout] updateSettings ERROR:", error.message, error.stack);
+          throw error;
+        }
+      }),
+
+    // Manual trigger for testing
+    runNow: protectedProcedure.mutation(async ({ ctx }) => {
+      const { getAutoScoutSettings, getProfileByUserId } = await import("./db");
+      const { scoutJobs } = await import("./scout");
+      const { sendJobAlertEmail } = await import("./email");
+      const { calculateMatch } = await import("./matching");
+
+      const settings = await getAutoScoutSettings(ctx.user.id);
+      if (!settings) {
+        throw new Error("Auto Scout ei ole konfiguroitu");
+      }
+
+      const profile = await getProfileByUserId(ctx.user.id);
+      if (!profile) {
+        throw new Error("Profiili puuttuu");
+      }
+
+      const sources = settings.sources ? JSON.parse(settings.sources) : ["google_jobs"];
+      const results = await scoutJobs({ profile, sources, maxResults: 20 });
+      
+      const allJobs = results.flatMap(r => r.jobs);
+      
+      // Calculate match scores for each job
+      const jobsWithScores = allJobs.map(job => {
+        const jobForMatching = {
+          id: 0,
+          title: job.title || "",
+          company: job.company || "",
+          location: job.location || "",
+          description: job.description || "",
+          url: job.url || "",
+          source: job.source || "google_jobs",
+          externalId: job.externalId || "",
+          requiredSkills: null,
+          experienceRequired: null,
+          salaryMin: null,
+          salaryMax: null,
+          remoteType: null,
+          industry: null,
+          companyRating: null,
+          postedAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        const matchScores = calculateMatch(profile, jobForMatching as any);
+        return {
+          ...job,
+          matchScore: matchScores.totalScore,
+          matchCategory: matchScores.matchCategory,
+        };
+      });
+
+      // Sort by match score (highest first)
+      jobsWithScores.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+      
+      // Count excellent matches (85+)
+      const excellentMatches = jobsWithScores.filter(j => (j.matchScore || 0) >= 85).length;
+      const goodMatches = jobsWithScores.filter(j => (j.matchScore || 0) >= 70).length;
+      const bestScore = jobsWithScores.length > 0 ? jobsWithScores[0].matchScore || 0 : 0;
+      
+      if (allJobs.length > 0 && settings.emailEnabled && settings.emailAddress) {
+        await sendJobAlertEmail({
+          recipientEmail: settings.emailAddress,
+          recipientName: ctx.user.name || undefined,
+          jobs: jobsWithScores.slice(0, 10).map(j => ({
+            title: j.title || "Työpaikka",
+            company: j.company || "Yritys",
+            location: j.location || "",
+            url: j.url || "",
+            matchScore: j.matchScore,
+            matchCategory: j.matchCategory,
+          })),
+          totalJobs: allJobs.length,
+          newMatches: goodMatches,
+          excellentMatches,
+          bestMatchScore: bestScore,
+        });
+      }
+
+      return {
+        jobsFound: allJobs.length,
+        emailSent: allJobs.length > 0 && settings.emailEnabled === 1,
+        excellentMatches,
+        goodMatches,
+        bestScore,
+      };
+    }),
+  }),
+
+  // ============== DEBUG: Manual Auto Scout Trigger ==============
+  debugAutoScout: router({
+    trigger: protectedProcedure.mutation(async ({ ctx }) => {
+      const { runAutoScout } = await import("./auto-scout");
+      const result = await runAutoScout();
+      return result;
+    }),
+    
+    ensureSettings: protectedProcedure
+      .input(z.object({
+        email: z.string().email(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const { getDb } = await import("./db");
+        const { autoScoutSettings } = await import("../drizzle/schema");
+        const { eq } = await import("drizzle-orm");
+        
+        const db = await getDb();
+        if (!db) throw new Error("Database not available");
+        
+        const existing = await db
+          .select()
+          .from(autoScoutSettings)
+          .where(eq(autoScoutSettings.userId, ctx.user.id))
+          .limit(1);
+        
+        if (existing.length > 0) {
+          await db
+            .update(autoScoutSettings)
+            .set({
+              enabled: 1,
+              emailEnabled: 1,
+              email: input.email,
+              sources: '["google_jobs"]',
+              nextRunAt: new Date(),
+            })
+            .where(eq(autoScoutSettings.userId, ctx.user.id));
+          return { status: "updated", userId: ctx.user.id };
+        } else {
+          await db.insert(autoScoutSettings).values({
+            userId: ctx.user.id,
+            enabled: 1,
+            emailEnabled: 1,
+            frequency: "daily",
+            email: input.email,
+            sources: '["google_jobs"]',
+            nextRunAt: new Date(),
+          });
+          return { status: "created", userId: ctx.user.id };
+        }
+      }),
   }),
 });
 
