@@ -4,16 +4,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
-import { Loader2, Play, History, TrendingUp, CheckCircle2, AlertCircle, Globe } from "lucide-react";
-import { useState } from "react";
+import { Loader2, Play, History, TrendingUp, CheckCircle2, AlertCircle, Globe, Bell, Mail, Zap } from "lucide-react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 
 const AVAILABLE_SOURCES = [
-  { id: "tyomarkkinatori", name: "TE-palvelut / Työmarkkinatori", description: "Virallinen työnhakupalvelu" },
-  { id: "duunitori", name: "Duunitori", description: "Suomen suosituin työpaikkasivusto" },
-  { id: "oikotie", name: "Oikotie Työpaikat", description: "Schibsted-konsernin työpaikkasivusto" },
+  { id: "google_jobs", name: "Google Jobs", description: "Google-haku työpaikoista Serper API:lla" },
+  { id: "linkedin", name: "LinkedIn (tulossa)", description: "LinkedIn työpaikat - tulossa pian", disabled: true },
+  { id: "indeed", name: "Indeed (tulossa)", description: "Indeed työpaikat - tulossa pian", disabled: true },
   { id: "demo", name: "Demo-data", description: "Testidataa kehitystä varten" },
 ];
 
@@ -24,9 +27,58 @@ export default function Scout() {
     { limit: 10 },
     { enabled: !!user }
   );
+  const { data: autoScoutSettings, refetch: refetchAutoScout } = trpc.autoScout.getSettings.useQuery(
+    undefined,
+    { enabled: !!user }
+  );
+  
   const scoutMutation = trpc.scout.run.useMutation();
+  const updateAutoScoutMutation = trpc.autoScout.updateSettings.useMutation();
+  const runAutoScoutNowMutation = trpc.autoScout.runNow.useMutation();
+  
   const [isRunning, setIsRunning] = useState(false);
-  const [selectedSources, setSelectedSources] = useState<string[]>(["tyomarkkinatori", "duunitori"]);
+  const [selectedSources, setSelectedSources] = useState<string[]>(["google_jobs"]);
+  
+  // Auto Scout state
+  const [autoScoutEnabled, setAutoScoutEnabled] = useState(false);
+  const [autoScoutFrequency, setAutoScoutFrequency] = useState<"daily" | "weekly" | "biweekly">("weekly");
+  const [autoScoutEmail, setAutoScoutEmail] = useState("");
+  const [autoScoutEmailEnabled, setAutoScoutEmailEnabled] = useState(true);
+
+  // Load auto scout settings
+  useEffect(() => {
+    if (autoScoutSettings) {
+      setAutoScoutEnabled(autoScoutSettings.enabled);
+      setAutoScoutFrequency(autoScoutSettings.frequency as "daily" | "weekly" | "biweekly");
+      setAutoScoutEmail(autoScoutSettings.emailAddress || "");
+      setAutoScoutEmailEnabled(autoScoutSettings.emailEnabled);
+    }
+  }, [autoScoutSettings]);
+
+  const handleSaveAutoScout = async () => {
+    try {
+      await updateAutoScoutMutation.mutateAsync({
+        enabled: autoScoutEnabled,
+        frequency: autoScoutFrequency,
+        emailEnabled: autoScoutEmailEnabled,
+        emailAddress: autoScoutEmail || undefined,
+        sources: selectedSources,
+      });
+      toast.success(autoScoutEnabled ? "Auto Scout aktivoitu!" : "Auto Scout pois päältä");
+      refetchAutoScout();
+    } catch (error) {
+      toast.error("Tallennus epäonnistui");
+    }
+  };
+
+  const handleTestAutoScout = async () => {
+    try {
+      const result = await runAutoScoutNowMutation.mutateAsync();
+      toast.success(`Löydettiin ${result.jobsFound} työpaikkaa${result.emailSent ? ", sähköposti lähetetty!" : ""}`);
+    } catch (error: any) {
+      toast.error(error.message || "Testi epäonnistui");
+    }
+  };
 
   const toggleSource = (sourceId: string) => {
     setSelectedSources(prev => 
@@ -134,16 +186,19 @@ export default function Scout() {
                   {AVAILABLE_SOURCES.map((source) => (
                     <div
                       key={source.id}
-                      className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                        selectedSources.includes(source.id)
-                          ? "border-primary bg-primary/5"
-                          : "border-border hover:bg-accent/50"
+                      className={`flex items-start gap-3 p-3 border rounded-lg transition-colors ${
+                        source.disabled 
+                          ? "opacity-50 cursor-not-allowed"
+                          : selectedSources.includes(source.id)
+                            ? "border-primary bg-primary/5 cursor-pointer"
+                            : "border-border hover:bg-accent/50 cursor-pointer"
                       }`}
-                      onClick={() => toggleSource(source.id)}
+                      onClick={() => !source.disabled && toggleSource(source.id)}
                     >
                       <Checkbox
                         checked={selectedSources.includes(source.id)}
-                        onCheckedChange={() => toggleSource(source.id)}
+                        onCheckedChange={() => !source.disabled && toggleSource(source.id)}
+                        disabled={source.disabled}
                       />
                       <div className="flex-1">
                         <p className="text-sm font-medium">{source.name}</p>
@@ -221,15 +276,144 @@ export default function Scout() {
                       <p className="text-sm text-red-600 mt-1">{run.errorMessage}</p>
                     )}
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">
-                      Lähteet: {run.sources ? JSON.parse(run.sources).join(", ") : "N/A"}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">
+                        Lähteet: {run.sources ? JSON.parse(run.sources).join(", ") : "N/A"}
+                      </p>
+                    </div>
+                    {run.resultsCount > 0 && (
+                      <Link href="/jobs">
+                        <Button variant="outline" size="sm">
+                          Katso tulokset
+                        </Button>
+                      </Link>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Auto Scout Settings */}
+      <Card className="mt-6">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Bell className="w-5 h-5 text-primary" />
+            <CardTitle>Automaattinen Scoutaus</CardTitle>
+          </div>
+          <CardDescription>
+            Saat uudet työpaikat automaattisesti sähköpostiisi
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Enable/Disable */}
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="auto-scout-toggle" className="text-base font-medium">
+                Aktivoi Auto Scout
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Hae työpaikat automaattisesti ja lähetä sähköpostilla
+              </p>
+            </div>
+            <Switch
+              id="auto-scout-toggle"
+              checked={autoScoutEnabled}
+              onCheckedChange={setAutoScoutEnabled}
+            />
+          </div>
+
+          {autoScoutEnabled && (
+            <>
+              {/* Frequency */}
+              <div className="space-y-2">
+                <Label>Hakutiheys</Label>
+                <Select value={autoScoutFrequency} onValueChange={(v) => setAutoScoutFrequency(v as any)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="daily">Päivittäin</SelectItem>
+                    <SelectItem value="weekly">Viikoittain</SelectItem>
+                    <SelectItem value="biweekly">Joka toinen viikko</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Email settings */}
+              <div className="space-y-4 pt-4 border-t">
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-muted-foreground" />
+                  <Label className="text-base font-medium">Sähköposti-ilmoitukset</Label>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="email-toggle" className="text-sm">Lähetä tulokset sähköpostiin</Label>
+                  <Switch
+                    id="email-toggle"
+                    checked={autoScoutEmailEnabled}
+                    onCheckedChange={setAutoScoutEmailEnabled}
+                  />
+                </div>
+
+                {autoScoutEmailEnabled && (
+                  <div className="space-y-2">
+                    <Label htmlFor="email-address">Sähköpostiosoite</Label>
+                    <Input
+                      id="email-address"
+                      type="email"
+                      placeholder="nimi@esimerkki.fi"
+                      value={autoScoutEmail}
+                      onChange={(e) => setAutoScoutEmail(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Status */}
+              {autoScoutSettings?.lastRunAt && (
+                <div className="text-sm text-muted-foreground pt-4 border-t">
+                  <p>Edellinen ajo: {new Date(autoScoutSettings.lastRunAt).toLocaleString("fi-FI")}</p>
+                  {autoScoutSettings.nextRunAt && (
+                    <p>Seuraava ajo: {new Date(autoScoutSettings.nextRunAt).toLocaleString("fi-FI")}</p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Action buttons */}
+          <div className="flex gap-3 pt-4">
+            <Button 
+              onClick={handleSaveAutoScout} 
+              disabled={updateAutoScoutMutation.isPending}
+            >
+              {updateAutoScoutMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 mr-2" />
+              )}
+              Tallenna asetukset
+            </Button>
+            
+            {autoScoutEnabled && (
+              <Button 
+                variant="outline" 
+                onClick={handleTestAutoScout}
+                disabled={runAutoScoutNowMutation.isPending}
+              >
+                {runAutoScoutNowMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Zap className="w-4 h-4 mr-2" />
+                )}
+                Testaa nyt
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -240,10 +424,8 @@ export default function Scout() {
         </CardHeader>
         <CardContent>
           <ul className="space-y-2 text-sm text-muted-foreground">
-            <li>• Automaattinen scoutaus (päivittäin/viikottain)</li>
             <li>• LinkedIn Jobs API -integraatio</li>
             <li>• Indeed API -integraatio</li>
-            <li>• Notifikaatiot uusista matcheista</li>
             <li>• Piilossa olevien työpaikkojen etsintä</li>
             <li>• Monster.fi integraatio</li>
           </ul>
