@@ -78,66 +78,23 @@ async function startAutoScoutCron() {
 
   const runAutoScouts = async () => {
     try {
-      const { getAutoScoutSettingsDueForRun, updateAutoScoutLastRun, getProfileByUserId, getUserById } = await import("../db");
-      const { scoutJobs } = await import("../scout");
-      const { sendJobAlertEmail } = await import("../email");
-
-      const dueSettings = await getAutoScoutSettingsDueForRun();
+      const { runAutoScout } = await import("../auto-scout");
+      const result = await runAutoScout();
       
-      if (dueSettings.length === 0) {
-        return;
+      if (result.usersProcessed > 0) {
+        console.log(`[AutoScout] Processed ${result.usersProcessed} users, sent ${result.emailsSent} emails`);
       }
-
-      console.log(`[AutoScout] Found ${dueSettings.length} due scouts to run`);
-
-      for (const settings of dueSettings) {
-        try {
-          const profile = await getProfileByUserId(settings.userId);
-          if (!profile) {
-            console.log(`[AutoScout] No profile for user ${settings.userId}, skipping`);
-            continue;
-          }
-
-          const user = await getUserById(settings.userId);
-          const sources = settings.sources ? JSON.parse(settings.sources) : ["google_jobs"];
-          
-          console.log(`[AutoScout] Running scout for user ${settings.userId}`);
-          const results = await scoutJobs({ profile, sources, maxResults: 20 });
-          const allJobs = results.flatMap(r => r.jobs);
-
-          console.log(`[AutoScout] Found ${allJobs.length} jobs for user ${settings.userId}`);
-
-          // Send email if enabled and jobs found
-          if (allJobs.length > 0 && settings.emailEnabled === 1 && settings.emailAddress) {
-            await sendJobAlertEmail({
-              recipientEmail: settings.emailAddress,
-              recipientName: user?.name || undefined,
-              jobs: allJobs.slice(0, 10).map(j => ({
-                title: j.title || "Työpaikka",
-                company: j.company || "Yritys",
-                location: j.location || "",
-                url: j.url || "",
-              })),
-              totalJobs: allJobs.length,
-              newMatches: allJobs.length,
-            });
-            console.log(`[AutoScout] Email sent to ${settings.emailAddress}`);
-          }
-
-          // Update last run time
-          await updateAutoScoutLastRun(settings.id, settings.frequency);
-          
-        } catch (error) {
-          console.error(`[AutoScout] Error for user ${settings.userId}:`, error);
-        }
+      
+      if (result.errors.length > 0) {
+        console.error("[AutoScout] Errors:", result.errors);
       }
     } catch (error) {
       console.error("[AutoScout] Cron error:", error);
     }
   };
 
-  // Run immediately on startup, then every hour
-  setTimeout(runAutoScouts, 10000); // Wait 10s after startup
+  // Run immediately on startup (after 10s), then every hour
+  setTimeout(runAutoScouts, 10000);
   setInterval(runAutoScouts, CRON_INTERVAL);
 }
 
