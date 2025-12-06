@@ -491,8 +491,49 @@ export const appRouter = router({
           throw new Error("Unauthorized");
         }
 
-        const { runAutoScout } = await import("./auto-scout");
-        return await runAutoScout();
+        // Run auto scouts that are due
+        const { getAutoScoutSettingsDueForRun, updateAutoScoutLastRun, getProfileByUserId, getUserById } = await import("./db");
+        const { scoutJobs } = await import("./scout");
+        const { sendJobAlertEmail } = await import("./email");
+
+        const dueSettings = await getAutoScoutSettingsDueForRun();
+        let totalJobsFound = 0;
+        let emailsSent = 0;
+
+        for (const settings of dueSettings) {
+          try {
+            const profile = await getProfileByUserId(settings.userId);
+            if (!profile) continue;
+
+            const user = await getUserById(settings.userId);
+            const sources = settings.sources ? JSON.parse(settings.sources) : ["google_jobs"];
+            const results = await scoutJobs({ profile, sources, maxResults: 20 });
+            const allJobs = results.flatMap(r => r.jobs);
+            totalJobsFound += allJobs.length;
+
+            if (allJobs.length > 0 && settings.emailEnabled === 1 && settings.emailAddress) {
+              await sendJobAlertEmail({
+                recipientEmail: settings.emailAddress,
+                recipientName: user?.name || undefined,
+                jobs: allJobs.slice(0, 10).map(j => ({
+                  title: j.title || "Työpaikka",
+                  company: j.company || "Yritys",
+                  location: j.location || "",
+                  url: j.url || "",
+                })),
+                totalJobs: allJobs.length,
+                newMatches: allJobs.length,
+              });
+              emailsSent++;
+            }
+
+            await updateAutoScoutLastRun(settings.id, settings.frequency);
+          } catch (error) {
+            console.error(`[AutoScout] Error for user ${settings.userId}:`, error);
+          }
+        }
+
+        return { usersProcessed: dueSettings.length, totalJobsFound, emailsSent };
       }),
 
     fetchNews: protectedProcedure
