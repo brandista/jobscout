@@ -46,25 +46,30 @@ const sentimentIcons = {
 // Result item component
 function ResultItem({ result }: { result: { title: string; snippet: string; link: string; date?: string } }) {
   return (
-    <div className="p-4 border rounded-lg hover:bg-accent/50 transition-colors">
+    <a 
+      href={result.link} 
+      target="_blank" 
+      rel="noopener noreferrer"
+      className="block p-4 border rounded-lg hover:bg-accent/50 hover:border-primary/50 transition-colors cursor-pointer group"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <h4 className="font-medium text-sm line-clamp-2 mb-1">{result.title}</h4>
+          <h4 className="font-medium text-sm line-clamp-2 mb-1 group-hover:text-primary transition-colors">
+            {result.title}
+          </h4>
           <p className="text-xs text-muted-foreground line-clamp-2">{result.snippet}</p>
           {result.date && (
             <span className="text-xs text-muted-foreground mt-1 block">{result.date}</span>
           )}
+          <span className="text-xs text-primary mt-2 inline-flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            Avaa sivu <ExternalLink className="w-3 h-3" />
+          </span>
         </div>
-        <a 
-          href={result.link} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="shrink-0 p-2 hover:bg-accent rounded-md transition-colors"
-        >
-          <ExternalLink className="w-4 h-4 text-muted-foreground" />
-        </a>
+        <div className="shrink-0 p-2 bg-primary/10 rounded-md group-hover:bg-primary/20 transition-colors">
+          <ExternalLink className="w-4 h-4 text-primary" />
+        </div>
       </div>
-    </div>
+    </a>
   );
 }
 
