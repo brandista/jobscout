@@ -683,6 +683,177 @@ export const appRouter = router({
 
         return await response.json();
       }),
+
+    // Kattava yritystiedustelu - hakee useasta lähteestä
+    companyIntel: protectedProcedure
+      .input(z.object({
+        companyName: z.string().min(1).max(100),
+      }))
+      .mutation(async ({ input }) => {
+        const SERPER_API_KEY = process.env.SERPER_API_KEY;
+        if (!SERPER_API_KEY) {
+          throw new Error("SERPER_API_KEY not configured");
+        }
+
+        const companyName = input.companyName.trim();
+
+        // Helper function for Serper searches
+        const searchSerper = async (query: string, num: number = 10) => {
+          const response = await fetch("https://google.serper.dev/search", {
+            method: "POST",
+            headers: {
+              "X-API-KEY": SERPER_API_KEY,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              q: query,
+              gl: "fi",
+              hl: "fi",
+              num,
+            }),
+          });
+          if (!response.ok) return null;
+          return await response.json();
+        };
+
+        // Parallel searches for different intel categories
+        const [
+          basicInfo,
+          jobsInfo,
+          newsInfo,
+          financeInfo,
+          reviewsInfo,
+        ] = await Promise.all([
+          // 1. Perustiedot - toimiala, koko, sijainti
+          searchSerper(`"${companyName}" yritys toimiala henkilöstö suomi`, 5),
+          
+          // 2. Rekrytointi - avoimet paikat, rekrytointitilanne
+          searchSerper(`"${companyName}" avoimet työpaikat rekrytointi 2024 2025`, 8),
+          
+          // 3. Uutiset - rahoitus, kasvu, YT, muutokset
+          searchSerper(`"${companyName}" uutiset rahoitus kasvu YT irtisanominen 2024 2025`, 8),
+          
+          // 4. Taloustiedot - liikevaihto, tulos
+          searchSerper(`"${companyName}" liikevaihto tulos talous finder`, 5),
+          
+          // 5. Työntekijäarviot
+          searchSerper(`"${companyName}" työntekijä arvostelu kokemuksia glassdoor`, 5),
+        ]);
+
+        // Process and structure the results
+        const processResults = (data: any) => {
+          if (!data?.organic) return [];
+          return data.organic.map((r: any) => ({
+            title: r.title || "",
+            snippet: r.snippet || "",
+            link: r.link || "",
+            date: r.date || null,
+          }));
+        };
+
+        // Extract signals from news
+        const extractSignals = (newsResults: any[]) => {
+          const signals: { type: string; text: string; sentiment: "positive" | "negative" | "neutral" }[] = [];
+          
+          for (const news of newsResults) {
+            const text = `${news.title} ${news.snippet}`.toLowerCase();
+            
+            if (text.includes("rahoitus") || text.includes("sijoitus") || text.includes("miljoonaa euroa")) {
+              signals.push({ type: "funding", text: news.title, sentiment: "positive" });
+            }
+            if (text.includes("kasvaa") || text.includes("laajent") || text.includes("uusi toimipiste")) {
+              signals.push({ type: "growth", text: news.title, sentiment: "positive" });
+            }
+            if (text.includes("rekrytoi") || text.includes("palkkaa") || text.includes("avoimia paikkoja")) {
+              signals.push({ type: "hiring", text: news.title, sentiment: "positive" });
+            }
+            if (text.includes("yt-neuvottelu") || text.includes("irtisano") || text.includes("lomautta")) {
+              signals.push({ type: "layoffs", text: news.title, sentiment: "negative" });
+            }
+            if (text.includes("yrityskauppa") || text.includes("ostaa") || text.includes("fuusio")) {
+              signals.push({ type: "acquisition", text: news.title, sentiment: "neutral" });
+            }
+          }
+          
+          return signals.slice(0, 10);
+        };
+
+        // Calculate hiring score based on job results
+        const calculateHiringScore = (jobResults: any[]) => {
+          let score = 50; // Base score
+          const jobCount = jobResults.length;
+          
+          if (jobCount >= 5) score += 30;
+          else if (jobCount >= 3) score += 20;
+          else if (jobCount >= 1) score += 10;
+          
+          // Check for recent dates
+          const recentJobs = jobResults.filter(j => {
+            const text = `${j.title} ${j.snippet}`.toLowerCase();
+            return text.includes("2025") || text.includes("2024") || text.includes("tänään") || text.includes("viikko");
+          });
+          
+          if (recentJobs.length >= 3) score += 20;
+          
+          return Math.min(score, 100);
+        };
+
+        const basicResults = processResults(basicInfo);
+        const jobResults = processResults(jobsInfo);
+        const newsResults = processResults(newsInfo);
+        const financeResults = processResults(financeInfo);
+        const reviewResults = processResults(reviewsInfo);
+        
+        const signals = extractSignals(newsResults);
+        const hiringScore = calculateHiringScore(jobResults);
+
+        // Determine overall sentiment
+        const positiveSignals = signals.filter(s => s.sentiment === "positive").length;
+        const negativeSignals = signals.filter(s => s.sentiment === "negative").length;
+        let overallSentiment: "positive" | "negative" | "neutral" = "neutral";
+        if (positiveSignals > negativeSignals + 1) overallSentiment = "positive";
+        if (negativeSignals > positiveSignals) overallSentiment = "negative";
+
+        return {
+          companyName,
+          timestamp: new Date().toISOString(),
+          
+          // Scores
+          hiringScore,
+          overallSentiment,
+          
+          // Signals
+          signals,
+          
+          // Categorized results
+          sections: {
+            basic: {
+              title: "Perustiedot",
+              results: basicResults,
+            },
+            jobs: {
+              title: "Rekrytointi & Avoimet paikat",
+              results: jobResults,
+              count: jobResults.length,
+            },
+            news: {
+              title: "Uutiset & Ajankohtaista",
+              results: newsResults,
+            },
+            finance: {
+              title: "Taloustiedot",
+              results: financeResults,
+            },
+            reviews: {
+              title: "Työntekijäkokemukset",
+              results: reviewResults,
+            },
+          },
+          
+          // Knowledge graph if available
+          knowledgeGraph: basicInfo?.knowledgeGraph || null,
+        };
+      }),
   }),
 
   // ============== STATS ==============

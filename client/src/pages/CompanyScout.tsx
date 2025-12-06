@@ -2,406 +2,382 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { 
   Loader2, 
-  Play, 
   Building2, 
-  TrendingUp, 
-  TrendingDown,
-  Briefcase, 
-  Newspaper,
-  Target,
-  Zap,
-  Users,
-  DollarSign,
-  AlertTriangle,
-  ChevronDown,
-  ChevronUp,
+  Search,
   ExternalLink,
-  RefreshCw
+  TrendingUp,
+  TrendingDown,
+  Briefcase,
+  Newspaper,
+  DollarSign,
+  Users,
+  AlertTriangle,
+  CheckCircle2,
+  MinusCircle,
+  Zap,
+  Star
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-// Event type icons and colors
-const eventTypeConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
+// Signal type configuration
+const signalConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
   funding: { icon: <DollarSign className="w-4 h-4" />, color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200", label: "Rahoitus" },
-  expansion: { icon: <TrendingUp className="w-4 h-4" />, color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200", label: "Laajentuminen" },
-  new_unit: { icon: <Building2 className="w-4 h-4" />, color: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200", label: "Uusi yksikkö" },
-  acquisition: { icon: <Zap className="w-4 h-4" />, color: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200", label: "Yrityskauppa" },
-  leadership_change: { icon: <Users className="w-4 h-4" />, color: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200", label: "Johdon muutos" },
-  yt_layoff: { icon: <AlertTriangle className="w-4 h-4" />, color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200", label: "YT-neuvottelut" },
-  yt_restructure: { icon: <RefreshCw className="w-4 h-4" />, color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200", label: "Uudelleenjärjestely" },
-  hiring_spree: { icon: <Users className="w-4 h-4" />, color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200", label: "Rekrytointikampanja" },
-  other: { icon: <Newspaper className="w-4 h-4" />, color: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200", label: "Muu" },
+  growth: { icon: <TrendingUp className="w-4 h-4" />, color: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200", label: "Kasvu" },
+  hiring: { icon: <Users className="w-4 h-4" />, color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200", label: "Rekrytointi" },
+  layoffs: { icon: <AlertTriangle className="w-4 h-4" />, color: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200", label: "YT/Irtisanomiset" },
+  acquisition: { icon: <Zap className="w-4 h-4" />, color: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200", label: "Yrityskauppa" },
 };
 
-// Score indicator component
-function ScoreIndicator({ score, label, size = "md" }: { score: number; label: string; size?: "sm" | "md" }) {
-  const getScoreColor = (s: number) => {
-    if (s >= 70) return "text-green-600 dark:text-green-400";
-    if (s >= 40) return "text-yellow-600 dark:text-yellow-400";
-    return "text-gray-500";
-  };
+// Sentiment icons
+const sentimentIcons = {
+  positive: <CheckCircle2 className="w-5 h-5 text-green-500" />,
+  negative: <AlertTriangle className="w-5 h-5 text-red-500" />,
+  neutral: <MinusCircle className="w-5 h-5 text-gray-500" />,
+};
 
-  const getProgressColor = (s: number) => {
-    if (s >= 70) return "bg-green-500";
-    if (s >= 40) return "bg-yellow-500";
-    return "bg-gray-400";
-  };
-
+// Result item component
+function ResultItem({ result }: { result: { title: string; snippet: string; link: string; date?: string } }) {
   return (
-    <div className={size === "sm" ? "space-y-1" : "space-y-2"}>
-      <div className="flex justify-between items-center">
-        <span className={`text-muted-foreground ${size === "sm" ? "text-xs" : "text-sm"}`}>{label}</span>
-        <span className={`font-bold ${getScoreColor(score)} ${size === "sm" ? "text-sm" : "text-lg"}`}>
-          {score}
-        </span>
-      </div>
-      <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-        <div 
-          className={`h-full ${getProgressColor(score)} transition-all duration-500`}
-          style={{ width: `${Math.min(score, 100)}%` }}
-        />
+    <div className="p-4 border rounded-lg hover:bg-accent/50 transition-colors">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <h4 className="font-medium text-sm line-clamp-2 mb-1">{result.title}</h4>
+          <p className="text-xs text-muted-foreground line-clamp-2">{result.snippet}</p>
+          {result.date && (
+            <span className="text-xs text-muted-foreground mt-1 block">{result.date}</span>
+          )}
+        </div>
+        <a 
+          href={result.link} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="shrink-0 p-2 hover:bg-accent rounded-md transition-colors"
+        >
+          <ExternalLink className="w-4 h-4 text-muted-foreground" />
+        </a>
       </div>
     </div>
   );
 }
 
-// Company card component
-function CompanyCard({ company, index }: { company: any; index: number }) {
-  const [expanded, setExpanded] = useState(false);
-
-  const config = eventTypeConfig[company.events?.[0]?.eventType] || eventTypeConfig.other;
+// Section component
+function ResultSection({ 
+  title, 
+  icon, 
+  results, 
+  count,
+  emptyMessage = "Ei tuloksia"
+}: { 
+  title: string; 
+  icon: React.ReactNode; 
+  results: any[]; 
+  count?: number;
+  emptyMessage?: string;
+}) {
+  if (!results || results.length === 0) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        {emptyMessage}
+      </div>
+    );
+  }
 
   return (
-    <Card className="overflow-hidden hover:shadow-lg transition-shadow">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary font-bold text-lg">
-              {index + 1}
-            </div>
-            <div>
-              <CardTitle className="text-xl">{company.company.name}</CardTitle>
-              {company.company.industry && (
-                <CardDescription>{company.company.industry}</CardDescription>
-              )}
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold text-primary">{company.combinedScore}</div>
-            <div className="text-xs text-muted-foreground">Yhteispisteet</div>
-          </div>
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
-        {/* Score bars */}
-        <div className="grid grid-cols-2 gap-4">
-          <ScoreIndicator score={company.talentNeedScore} label="Rekrytointitarve" size="sm" />
-          <ScoreIndicator score={company.profileMatchScore || 0} label="Profiili-match" size="sm" />
-        </div>
-
-        {/* Recent events */}
-        {company.events && company.events.length > 0 && (
-          <div>
-            <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-              <Newspaper className="w-4 h-4" />
-              Viimeisimmät tapahtumat
-            </h4>
-            <div className="space-y-2">
-              {company.events.slice(0, expanded ? undefined : 2).map((event: any) => {
-                const eventConfig = eventTypeConfig[event.eventType] || eventTypeConfig.other;
-                return (
-                  <div 
-                    key={event.id} 
-                    className="flex items-start gap-2 p-2 rounded-lg bg-accent/50"
-                  >
-                    <Badge variant="secondary" className={`${eventConfig.color} shrink-0`}>
-                      {eventConfig.icon}
-                      <span className="ml-1">{eventConfig.label}</span>
-                    </Badge>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{event.headline}</p>
-                      {event.summary && (
-                        <p className="text-xs text-muted-foreground line-clamp-2">{event.summary}</p>
-                      )}
-                    </div>
-                    {event.sourceUrl && (
-                      <a 
-                        href={event.sourceUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="shrink-0 text-muted-foreground hover:text-primary"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </a>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 mb-4">
+        {icon}
+        <h3 className="font-semibold">{title}</h3>
+        {count !== undefined && (
+          <Badge variant="secondary">{count} tulosta</Badge>
         )}
-
-        {/* Open positions */}
-        {company.jobs && company.jobs.length > 0 && (
-          <div>
-            <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-              <Briefcase className="w-4 h-4" />
-              Avoimet työpaikat ({company.jobs.length})
-            </h4>
-            <div className="flex flex-wrap gap-2">
-              {company.jobs.slice(0, expanded ? undefined : 4).map((job: any) => (
-                <Badge key={job.id} variant="outline" className="text-xs">
-                  {job.title}
-                </Badge>
-              ))}
-              {!expanded && company.jobs.length > 4 && (
-                <Badge variant="outline" className="text-xs text-muted-foreground">
-                  +{company.jobs.length - 4} muuta
-                </Badge>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Reasons */}
-        {company.reasons && company.reasons.length > 0 && expanded && (
-          <div>
-            <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-              <Target className="w-4 h-4" />
-              Pisteytyksen perusteet
-            </h4>
-            <ul className="text-sm text-muted-foreground space-y-1">
-              {company.reasons.map((reason: string, i: number) => (
-                <li key={i} className="flex items-start gap-2">
-                  <span className="text-primary">•</span>
-                  {reason}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Expand/collapse */}
-        {(company.events?.length > 2 || company.jobs?.length > 4 || company.reasons?.length > 0) && (
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            className="w-full"
-            onClick={() => setExpanded(!expanded)}
-          >
-            {expanded ? (
-              <>
-                <ChevronUp className="w-4 h-4 mr-2" />
-                Näytä vähemmän
-              </>
-            ) : (
-              <>
-                <ChevronDown className="w-4 h-4 mr-2" />
-                Näytä lisää
-              </>
-            )}
-          </Button>
-        )}
-      </CardContent>
-    </Card>
+      </div>
+      <div className="space-y-2">
+        {results.map((result, idx) => (
+          <ResultItem key={idx} result={result} />
+        ))}
+      </div>
+    </div>
   );
 }
 
 export default function CompanyScout() {
-  const { user, loading: authLoading } = useAuth();
-  const { data: profile } = trpc.profile.get.useQuery(undefined, { enabled: !!user });
-  const { data: stats } = trpc.stats.get.useQuery(undefined, { enabled: !!user });
-  const { 
-    data: topCompanies, 
-    isLoading: companiesLoading,
-    refetch: refetchCompanies 
-  } = trpc.scout.topCompanies.useQuery(
-    { limit: 20 },
-    { enabled: !!user }
-  );
+  const { loading: authLoading } = useAuth();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [companyData, setCompanyData] = useState<any>(null);
 
-  const runFullMutation = trpc.scout.runFull.useMutation();
-  const [isRunning, setIsRunning] = useState(false);
+  const companyIntelMutation = trpc.search.companyIntel.useMutation({
+    onSuccess: (data) => {
+      setCompanyData(data);
+      toast.success(`Tiedustelu valmis: ${data.companyName}`);
+    },
+    onError: (error) => {
+      toast.error("Tiedustelu epäonnistui: " + error.message);
+      setCompanyData(null);
+    },
+  });
 
-  const handleRunFull = async () => {
-    setIsRunning(true);
-    try {
-      const result = await runFullMutation.mutateAsync({
-        newsDaysBack: 14,
-        scoreDaysBack: 30,
-      });
+  const handleSearch = () => {
+    if (!searchQuery.trim()) {
+      toast.error("Kirjoita yrityksen nimi");
+      return;
+    }
+    companyIntelMutation.mutate({ companyName: searchQuery });
+  };
 
-      toast.success(
-        `Skannaus valmis! ${result.newsFetched} uutista, ${result.eventsCreated} tapahtumaa, ${result.scoresCalculated} pisteytettyä yritystä.`
-      );
-      refetchCompanies();
-    } catch (error) {
-      toast.error("Skannaus epäonnistui");
-      console.error(error);
-    } finally {
-      setIsRunning(false);
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      handleSearch();
     }
   };
 
   if (authLoading) {
     return (
       <DashboardLayout>
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    </DashboardLayout>
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </DashboardLayout>
     );
   }
 
   return (
     <DashboardLayout>
-    <div className="container max-w-6xl py-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
+      <div className="container max-w-6xl py-8">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-6">
           <Building2 className="w-8 h-8 text-primary" />
           <div>
             <h1 className="text-3xl font-bold">Yritys-Skanneri</h1>
-            <p className="text-muted-foreground">
-              Löydä yritykset joilla on suurin rekrytointitarve
-            </p>
+            <p className="text-muted-foreground">Kattava yritystiedustelu työnhakijan näkökulmasta</p>
           </div>
         </div>
-      </div>
 
-      {/* Stats & Action */}
-      <div className="grid md:grid-cols-4 gap-4 mb-6">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{stats?.companies || 0}</div>
-            <p className="text-sm text-muted-foreground">Yrityksiä</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{stats?.events || 0}</div>
-            <p className="text-sm text-muted-foreground">Tapahtumia</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{stats?.jobs || 0}</div>
-            <p className="text-sm text-muted-foreground">Työpaikkoja</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-primary text-primary-foreground">
-          <CardContent className="pt-6">
-            <Button
-              onClick={handleRunFull}
-              disabled={isRunning}
-              variant="secondary"
-              className="w-full"
-            >
-              {isRunning ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Skannataan...
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 mr-2" />
-                  Käynnistä skannaus
-                </>
-              )}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Profile notice */}
-      {!profile && (
-        <Card className="mb-6 border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <Target className="w-5 h-5 text-yellow-600" />
-              <div>
-                <p className="font-medium text-yellow-900 dark:text-yellow-100">
-                  Profiili puuttuu
-                </p>
-                <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                  Luo profiili saadaksesi personoidut matchaus-pisteet yrityksille.
-                </p>
-              </div>
+        {/* Search Card */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Tiedustele yritystä</CardTitle>
+            <CardDescription>
+              Hae kattavat tiedot: rekrytointitilanne, uutiset, taloustiedot ja työntekijäkokemukset
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-3">
+              <Input
+                placeholder="Kirjoita yrityksen nimi, esim. Reaktor, Supercell, Wolt..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={handleKeyPress}
+                className="flex-1"
+                disabled={companyIntelMutation.isPending}
+              />
+              <Button 
+                onClick={handleSearch} 
+                disabled={companyIntelMutation.isPending}
+                size="lg"
+              >
+                {companyIntelMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Tiedustellaan...
+                  </>
+                ) : (
+                  <>
+                    <Search className="w-4 h-4 mr-2" />
+                    Tiedustele
+                  </>
+                )}
+              </Button>
             </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Top Companies */}
-      <div className="mb-4">
-        <h2 className="text-xl font-semibold flex items-center gap-2">
-          <TrendingUp className="w-5 h-5" />
-          Top-yritykset rekrytointitarpeen mukaan
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Yritykset joilla on eniten kasvusignaaleja ja avoimia paikkoja
-        </p>
-      </div>
-
-      {companiesLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
-      ) : !topCompanies || topCompanies.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Building2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Ei vielä yrityksiä</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              Käynnistä skannaus löytääksesi yrityksiä joilla on rekrytointitarve.
+            <p className="text-xs text-muted-foreground mt-2">
+              Tiedustelu hakee tiedot useasta lähteestä ja analysoi yrityksen rekrytointisignaalit
             </p>
-            <Button onClick={handleRunFull} disabled={isRunning}>
-              {isRunning ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Skannataan...
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 mr-2" />
-                  Käynnistä ensimmäinen skannaus
-                </>
-              )}
-            </Button>
           </CardContent>
         </Card>
-      ) : (
-        <div className="grid md:grid-cols-2 gap-4">
-          {topCompanies.map((company, index) => (
-            <CompanyCard key={company.company.id} company={company} index={index} />
-          ))}
-        </div>
-      )}
 
-      {/* Legend */}
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="text-lg">Tapahtumatyypit</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(eventTypeConfig).map(([key, config]) => (
-              <Badge key={key} variant="secondary" className={config.color}>
-                {config.icon}
-                <span className="ml-1">{config.label}</span>
-              </Badge>
-            ))}
+        {/* Results */}
+        {companyData && (
+          <div className="space-y-6">
+            {/* Summary Card */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <CardTitle className="text-2xl flex items-center gap-3">
+                      {companyData.companyName}
+                      {sentimentIcons[companyData.overallSentiment as keyof typeof sentimentIcons]}
+                    </CardTitle>
+                    <CardDescription>
+                      Tiedustelu suoritettu {new Date(companyData.timestamp).toLocaleString("fi-FI")}
+                    </CardDescription>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm text-muted-foreground mb-1">Rekrytointiaktiivisuus</div>
+                    <div className="flex items-center gap-2">
+                      <Progress value={companyData.hiringScore} className="w-24 h-3" />
+                      <span className="font-bold text-lg">{companyData.hiringScore}</span>
+                    </div>
+                  </div>
+                </div>
+              </CardHeader>
+              
+              {/* Signals */}
+              {companyData.signals && companyData.signals.length > 0 && (
+                <CardContent className="pt-0">
+                  <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
+                    <Zap className="w-4 h-4" />
+                    Havaitut signaalit
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {companyData.signals.map((signal: any, idx: number) => {
+                      const config = signalConfig[signal.type] || signalConfig.growth;
+                      return (
+                        <Badge 
+                          key={idx} 
+                          className={`${config.color} flex items-center gap-1`}
+                          variant="secondary"
+                        >
+                          {config.icon}
+                          <span className="max-w-[200px] truncate">{signal.text}</span>
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              )}
+
+              {/* Knowledge Graph */}
+              {companyData.knowledgeGraph && (
+                <CardContent className="pt-0 border-t">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4">
+                    {companyData.knowledgeGraph.type && (
+                      <div>
+                        <div className="text-xs text-muted-foreground">Tyyppi</div>
+                        <div className="font-medium">{companyData.knowledgeGraph.type}</div>
+                      </div>
+                    )}
+                    {companyData.knowledgeGraph.founded && (
+                      <div>
+                        <div className="text-xs text-muted-foreground">Perustettu</div>
+                        <div className="font-medium">{companyData.knowledgeGraph.founded}</div>
+                      </div>
+                    )}
+                    {companyData.knowledgeGraph.headquarters && (
+                      <div>
+                        <div className="text-xs text-muted-foreground">Pääkonttori</div>
+                        <div className="font-medium">{companyData.knowledgeGraph.headquarters}</div>
+                      </div>
+                    )}
+                    {companyData.knowledgeGraph.ceo && (
+                      <div>
+                        <div className="text-xs text-muted-foreground">Toimitusjohtaja</div>
+                        <div className="font-medium">{companyData.knowledgeGraph.ceo}</div>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+
+            {/* Detailed Results in Tabs */}
+            <Card>
+              <CardContent className="pt-6">
+                <Tabs defaultValue="jobs">
+                  <TabsList className="grid w-full grid-cols-5">
+                    <TabsTrigger value="jobs" className="flex items-center gap-1">
+                      <Briefcase className="w-4 h-4" />
+                      <span className="hidden sm:inline">Työpaikat</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="news" className="flex items-center gap-1">
+                      <Newspaper className="w-4 h-4" />
+                      <span className="hidden sm:inline">Uutiset</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="finance" className="flex items-center gap-1">
+                      <DollarSign className="w-4 h-4" />
+                      <span className="hidden sm:inline">Talous</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="reviews" className="flex items-center gap-1">
+                      <Star className="w-4 h-4" />
+                      <span className="hidden sm:inline">Arviot</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="basic" className="flex items-center gap-1">
+                      <Building2 className="w-4 h-4" />
+                      <span className="hidden sm:inline">Perustiedot</span>
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="jobs" className="mt-6">
+                    <ResultSection
+                      title="Rekrytointi & Avoimet työpaikat"
+                      icon={<Briefcase className="w-5 h-5 text-emerald-600" />}
+                      results={companyData.sections.jobs.results}
+                      count={companyData.sections.jobs.count}
+                      emptyMessage="Ei löytynyt avoimia työpaikkoja"
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="news" className="mt-6">
+                    <ResultSection
+                      title="Uutiset & Ajankohtaista"
+                      icon={<Newspaper className="w-5 h-5 text-blue-600" />}
+                      results={companyData.sections.news.results}
+                      emptyMessage="Ei löytynyt uutisia"
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="finance" className="mt-6">
+                    <ResultSection
+                      title="Taloustiedot"
+                      icon={<DollarSign className="w-5 h-5 text-green-600" />}
+                      results={companyData.sections.finance.results}
+                      emptyMessage="Ei löytynyt taloustietoja"
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="reviews" className="mt-6">
+                    <ResultSection
+                      title="Työntekijäkokemukset & Arviot"
+                      icon={<Star className="w-5 h-5 text-yellow-600" />}
+                      results={companyData.sections.reviews.results}
+                      emptyMessage="Ei löytynyt arvioita"
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="basic" className="mt-6">
+                    <ResultSection
+                      title="Perustiedot"
+                      icon={<Building2 className="w-5 h-5 text-gray-600" />}
+                      results={companyData.sections.basic.results}
+                      emptyMessage="Ei löytynyt perustietoja"
+                    />
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
-    </div>
+        )}
+
+        {/* Empty state */}
+        {!companyData && !companyIntelMutation.isPending && (
+          <Card className="border-dashed">
+            <CardContent className="py-16 text-center">
+              <Building2 className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-lg font-medium mb-2">Aloita yritystiedustelu</h3>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                Kirjoita yrityksen nimi hakukenttään ja saat kattavan analyysin yrityksen 
+                rekrytointitilanteesta, uutisista, taloustiedoista ja työntekijäkokemuksista.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </DashboardLayout>
   );
 }
