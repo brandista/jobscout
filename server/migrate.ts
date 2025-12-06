@@ -150,6 +150,26 @@ export async function runMigrations() {
       // Column may already exist
     }
 
+    // Auto Scout Settings table
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS autoScoutSettings (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        userId INT NOT NULL,
+        enabled INT DEFAULT 0 NOT NULL,
+        frequency ENUM('daily', 'weekly', 'biweekly') DEFAULT 'weekly' NOT NULL,
+        emailEnabled INT DEFAULT 1 NOT NULL,
+        emailAddress VARCHAR(320),
+        sources TEXT,
+        lastRunAt TIMESTAMP NULL,
+        nextRunAt TIMESTAMP NULL,
+        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,
+        FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE KEY unique_user (userId)
+      )
+    `);
+    console.log("[Migrate] ✓ autoScoutSettings table created");
+
     console.log("[Migrate] Migrations complete!");
   } catch (error) {
     console.error("[Migrate] Migration error:", error);
