@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 
 const AVAILABLE_SOURCES = [
-  { id: "google", name: "Google Jobs", description: "Google-haku työpaikoista Serper API:lla" },
+  { id: "google", name: "Google Jobs", description: "Oikeat työpaikkailmoitukset SerpApi + Adzuna kautta" },
   { id: "linkedin", name: "LinkedIn (tulossa)", description: "LinkedIn työpaikat - tulossa pian", disabled: true },
   { id: "indeed", name: "Indeed (tulossa)", description: "Indeed työpaikat - tulossa pian", disabled: true },
 ];
