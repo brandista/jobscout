@@ -128,45 +128,47 @@ export async function getOrCreateCompany(name: string, data?: Partial<InsertComp
 
   const normalized = normalizeCompanyName(name);
   
-  const existing = await db.select().from(companies)
-    .where(eq(companies.nameNormalized, normalized))
-    .limit(1);
+  const existingResult = await db.execute(sql`
+    SELECT * FROM companies WHERE nameNormalized = ${normalized} LIMIT 1
+  `);
+  const existing = (existingResult[0] as any[]) || [];
 
   if (existing.length > 0) {
-    await db.update(companies)
-      .set({ lastSeenAt: new Date(), ...data })
-      .where(eq(companies.id, existing[0].id));
+    await db.execute(sql`
+      UPDATE companies SET lastSeenAt = NOW() WHERE id = ${existing[0].id}
+    `);
     return existing[0];
   }
 
-  await db.insert(companies).values({
-    name,
-    nameNormalized: normalized,
-    ...data,
-  });
+  await db.execute(sql`
+    INSERT INTO companies (name, nameNormalized, domain, industry, mainLocation)
+    VALUES (${name}, ${normalized}, ${data?.domain || null}, ${data?.industry || null}, ${data?.mainLocation || null})
+  `);
 
-  const newCompany = await db.select().from(companies)
-    .where(eq(companies.nameNormalized, normalized))
-    .limit(1);
+  const newResult = await db.execute(sql`
+    SELECT * FROM companies WHERE nameNormalized = ${normalized} LIMIT 1
+  `);
   
-  return newCompany[0];
+  return ((newResult[0] as any[]) || [])[0];
 }
 
 export async function getCompanyById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(companies).where(eq(companies.id, id)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  const result = await db.execute(sql`SELECT * FROM companies WHERE id = ${id} LIMIT 1`);
+  const rows = (result[0] as any[]) || [];
+  return rows.length > 0 ? rows[0] : undefined;
 }
 
 export async function getCompanyByName(name: string) {
   const db = await getDb();
   if (!db) return undefined;
   const normalized = normalizeCompanyName(name);
-  const result = await db.select().from(companies)
-    .where(eq(companies.nameNormalized, normalized))
-    .limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  const result = await db.execute(sql`
+    SELECT * FROM companies WHERE nameNormalized = ${normalized} LIMIT 1
+  `);
+  const rows = (result[0] as any[]) || [];
+  return rows.length > 0 ? rows[0] : undefined;
 }
 
 export async function getCompanies(limit: number = 100) {
@@ -238,10 +240,15 @@ export async function createEvent(event: InsertEvent) {
 export async function getEventsByCompanyId(companyId: number, limit: number = 20) {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(events)
-    .where(eq(events.companyId, companyId))
-    .orderBy(desc(events.createdAt))
-    .limit(limit);
+  
+  const result = await db.execute(sql`
+    SELECT * FROM events 
+    WHERE companyId = ${companyId}
+    ORDER BY createdAt DESC
+    LIMIT ${limit}
+  `);
+  
+  return (result[0] as any[]) || [];
 }
 
 export async function getRecentEvents(daysBack: number = 30, limit: number = 100) {
@@ -250,15 +257,16 @@ export async function getRecentEvents(daysBack: number = 30, limit: number = 100
   
   const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
   
-  return await db.select({
-    event: events,
-    company: companies,
-  })
-    .from(events)
-    .innerJoin(companies, eq(events.companyId, companies.id))
-    .where(gte(events.createdAt, cutoff))
-    .orderBy(desc(events.createdAt))
-    .limit(limit);
+  const result = await db.execute(sql`
+    SELECT e.*, c.name as companyName, c.nameNormalized, c.domain, c.industry
+    FROM events e
+    INNER JOIN companies c ON e.companyId = c.id
+    WHERE e.createdAt >= ${cutoff}
+    ORDER BY e.createdAt DESC
+    LIMIT ${limit}
+  `);
+  
+  return (result[0] as any[]) || [];
 }
 
 // ============== COMPANY SCORE QUERIES ==============
@@ -267,25 +275,29 @@ export async function upsertCompanyScore(score: InsertCompanyScore) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const existing = await db.select().from(companyScores)
-    .where(and(
-      eq(companyScores.companyId, score.companyId),
-      score.userId ? eq(companyScores.userId, score.userId) : sql`${companyScores.userId} IS NULL`
-    ))
-    .limit(1);
+  const existingResult = await db.execute(sql`
+    SELECT * FROM companyScores 
+    WHERE companyId = ${score.companyId} 
+    AND ${score.userId ? sql`userId = ${score.userId}` : sql`userId IS NULL`}
+    LIMIT 1
+  `);
+  const existing = (existingResult[0] as any[]) || [];
 
   if (existing.length > 0) {
-    await db.update(companyScores)
-      .set({
-        talentNeedScore: score.talentNeedScore,
-        profileMatchScore: score.profileMatchScore,
-        combinedScore: score.combinedScore,
-        scoreReasons: score.scoreReasons,
-        calculatedAt: new Date(),
-      })
-      .where(eq(companyScores.id, existing[0].id));
+    await db.execute(sql`
+      UPDATE companyScores SET 
+        talentNeedScore = ${score.talentNeedScore},
+        profileMatchScore = ${score.profileMatchScore},
+        combinedScore = ${score.combinedScore},
+        scoreReasons = ${score.scoreReasons},
+        calculatedAt = NOW()
+      WHERE id = ${existing[0].id}
+    `);
   } else {
-    await db.insert(companyScores).values(score);
+    await db.execute(sql`
+      INSERT INTO companyScores (companyId, userId, talentNeedScore, profileMatchScore, combinedScore, scoreReasons)
+      VALUES (${score.companyId}, ${score.userId || null}, ${score.talentNeedScore}, ${score.profileMatchScore}, ${score.combinedScore}, ${score.scoreReasons})
+    `);
   }
 }
 
@@ -293,15 +305,16 @@ export async function getTopCompanyScores(userId: number | null, limit: number =
   const db = await getDb();
   if (!db) return [];
 
-  return await db.select({
-    score: companyScores,
-    company: companies,
-  })
-    .from(companyScores)
-    .innerJoin(companies, eq(companyScores.companyId, companies.id))
-    .where(userId ? eq(companyScores.userId, userId) : sql`${companyScores.userId} IS NULL`)
-    .orderBy(desc(companyScores.combinedScore))
-    .limit(limit);
+  const result = await db.execute(sql`
+    SELECT cs.*, c.name as companyName, c.nameNormalized, c.domain, c.industry, c.mainLocation, c.employeeCountEstimate
+    FROM companyScores cs
+    INNER JOIN companies c ON cs.companyId = c.id
+    WHERE ${userId ? sql`cs.userId = ${userId}` : sql`cs.userId IS NULL`}
+    ORDER BY cs.combinedScore DESC
+    LIMIT ${limit}
+  `);
+  
+  return (result[0] as any[]) || [];
 }
 
 // ============== JOB QUERIES ==============
@@ -311,46 +324,54 @@ export async function createJob(job: InsertJob) {
   if (!db) throw new Error("Database not available");
   
   if (job.externalId) {
-    const existing = await db.select().from(jobs)
-      .where(eq(jobs.externalId, job.externalId))
-      .limit(1);
+    const existingResult = await db.execute(sql`
+      SELECT * FROM jobs WHERE externalId = ${job.externalId} LIMIT 1
+    `);
+    const existing = (existingResult[0] as any[]) || [];
     if (existing.length > 0) {
       return existing[0];
     }
   }
 
-  const result = await db.insert(jobs).values(job);
-  return result;
+  await db.execute(sql`
+    INSERT INTO jobs (externalId, source, title, company, description, location, salaryMin, salaryMax, employmentType, remoteType, industry, requiredSkills, experienceRequired, postedAt, expiresAt, url, companyRating, companyId)
+    VALUES (${job.externalId || null}, ${job.source || 'unknown'}, ${job.title}, ${job.company || null}, ${job.description || null}, ${job.location || null}, ${job.salaryMin || null}, ${job.salaryMax || null}, ${job.employmentType || null}, ${job.remoteType || null}, ${job.industry || null}, ${job.requiredSkills || null}, ${job.experienceRequired || null}, ${job.postedAt || new Date()}, ${job.expiresAt || null}, ${job.url || null}, ${job.companyRating || null}, ${job.companyId || null})
+  `);
+  
+  const result = await db.execute(sql`SELECT LAST_INSERT_ID() as insertId`);
+  return { insertId: ((result[0] as any[])[0])?.insertId };
 }
 
 export async function getJobById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(jobs).where(eq(jobs.id, id)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  const result = await db.execute(sql`SELECT * FROM jobs WHERE id = ${id} LIMIT 1`);
+  const rows = (result[0] as any[]) || [];
+  return rows.length > 0 ? rows[0] : undefined;
 }
 
 export async function getJobs(limit: number = 50, offset: number = 0) {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(jobs)
-    .orderBy(desc(jobs.createdAt))
-    .limit(limit).offset(offset);
+  const result = await db.execute(sql`
+    SELECT * FROM jobs ORDER BY createdAt DESC LIMIT ${limit} OFFSET ${offset}
+  `);
+  return (result[0] as any[]) || [];
 }
 
 export async function getJobsByCompanyId(companyId: number, limit: number = 50) {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(jobs)
-    .where(eq(jobs.companyId, companyId))
-    .orderBy(desc(jobs.createdAt))
-    .limit(limit);
+  const result = await db.execute(sql`
+    SELECT * FROM jobs WHERE companyId = ${companyId} ORDER BY createdAt DESC LIMIT ${limit}
+  `);
+  return (result[0] as any[]) || [];
 }
 
 export async function linkJobToCompany(jobId: number, companyId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(jobs).set({ companyId }).where(eq(jobs.id, jobId));
+  await db.execute(sql`UPDATE jobs SET companyId = ${companyId} WHERE id = ${jobId}`);
 }
 
 // ============== MATCH QUERIES ==============
@@ -358,31 +379,34 @@ export async function linkJobToCompany(jobId: number, companyId: number) {
 export async function createMatch(match: InsertMatch) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.insert(matches).values(match);
+  await db.execute(sql`
+    INSERT INTO matches (userId, jobId, score, reasons, status)
+    VALUES (${match.userId}, ${match.jobId}, ${match.score || 0}, ${match.reasons || null}, ${match.status || 'new'})
+  `);
 }
 
 export async function checkMatchExists(userId: number, jobId: number): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
-  const result = await db.select().from(matches)
-    .where(and(eq(matches.userId, userId), eq(matches.jobId, jobId)))
-    .limit(1);
-  return result.length > 0;
+  const result = await db.execute(sql`
+    SELECT id FROM matches WHERE userId = ${userId} AND jobId = ${jobId} LIMIT 1
+  `);
+  const rows = (result[0] as any[]) || [];
+  return rows.length > 0;
 }
 
 export async function getMatchesByUserId(userId: number, limit: number = 50) {
   const db = await getDb();
   if (!db) return [];
-  return await db
-    .select({
-      match: matches,
-      job: jobs,
-    })
-    .from(matches)
-    .innerJoin(jobs, eq(matches.jobId, jobs.id))
-    .where(eq(matches.userId, userId))
-    .orderBy(desc(matches.totalScore))
-    .limit(limit);
+  const result = await db.execute(sql`
+    SELECT m.*, j.*
+    FROM matches m
+    INNER JOIN jobs j ON m.jobId = j.id
+    WHERE m.userId = ${userId}
+    ORDER BY m.totalScore DESC
+    LIMIT ${limit}
+  `);
+  return (result[0] as any[]) || [];
 }
 
 // ============== SAVED JOBS QUERIES ==============
@@ -390,13 +414,15 @@ export async function getMatchesByUserId(userId: number, limit: number = 50) {
 export async function saveJob(userId: number, jobId: number, notes?: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.insert(savedJobs).values({ userId, jobId, notes });
+  await db.execute(sql`
+    INSERT INTO savedJobs (userId, jobId, notes) VALUES (${userId}, ${jobId}, ${notes || null})
+  `);
 }
 
 export async function unsaveJob(userId: number, jobId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(savedJobs).where(and(eq(savedJobs.userId, userId), eq(savedJobs.jobId, jobId)));
+  await db.execute(sql`DELETE FROM savedJobs WHERE userId = ${userId} AND jobId = ${jobId}`);
 }
 
 export async function getSavedJobsByUserId(userId: number) {
