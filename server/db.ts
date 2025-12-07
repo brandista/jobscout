@@ -208,27 +208,27 @@ export async function createEvent(event: InsertEvent) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   
-  const existing = await db.select().from(events)
-    .where(and(
-      eq(events.companyId, event.companyId),
-      eq(events.headline, event.headline)
-    ))
-    .limit(1);
+  // Use raw SQL to avoid Drizzle ORM bug with column names
+  const existing = await db.execute(sql`
+    SELECT * FROM events 
+    WHERE companyId = ${event.companyId} AND headline = ${event.headline}
+    LIMIT 1
+  `);
   
-  if (existing.length > 0) {
-    return existing[0];
+  if (existing[0] && (existing[0] as any[]).length > 0) {
+    return (existing[0] as any[])[0];
   }
 
   await db.insert(events).values(event);
   
-  const created = await db.select().from(events)
-    .where(and(
-      eq(events.companyId, event.companyId),
-      eq(events.headline, event.headline)
-    ))
-    .limit(1);
+  const created = await db.execute(sql`
+    SELECT * FROM events 
+    WHERE companyId = ${event.companyId} AND headline = ${event.headline}
+    ORDER BY id DESC
+    LIMIT 1
+  `);
   
-  return created[0];
+  return (created[0] as any[])[0];
 }
 
 export async function getEventsByCompanyId(companyId: number, limit: number = 20) {
