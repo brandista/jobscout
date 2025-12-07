@@ -1,13 +1,13 @@
 import type { Profile, InsertJob } from "../drizzle/schema";
 
 /**
- * Scoutaus-agentti työpaikkojen hakuun eri lähteistä
+ * Scoutaus-agentti työpaikkojen hakuun
  * 
- * Tuetut lähteet:
- * - tyomarkkinatori: TE-palvelujen Työmarkkinatori API (ilmainen)
- * - duunitori: Duunitori.fi scraping
- * - oikotie: Oikotie Työpaikat scraping
- * - demo: Demo-data testaukseen
+ * Käyttää Serper.dev Google Jobs API:a joka hakee oikeita työpaikkoja
+ * Google for Jobs -aggregaattorilta. Toimii maailmanlaajuisesti, myös Suomessa.
+ * 
+ * Ilmainen tier: 2500 hakua/kk
+ * https://serper.dev
  */
 
 export interface ScoutParams {
@@ -26,375 +26,161 @@ export interface ScoutResult {
  * Pääfunktio työpaikkojen scoutaukseen
  */
 export async function scoutJobs(params: ScoutParams): Promise<ScoutResult[]> {
-  const { profile, sources = ["tyomarkkinatori", "duunitori"], maxResults = 50 } = params;
+  const { profile, sources = ["google"], maxResults = 50 } = params;
   const results: ScoutResult[] = [];
-  const perSourceLimit = Math.ceil(maxResults / sources.length);
 
-  // Työmarkkinatori (TE-palvelut)
-  if (sources.includes("tyomarkkinatori")) {
+  // Serper.dev Google Jobs API (ensisijainen)
+  // Hyväksytään myös vanhat source-nimet yhteensopivuuden vuoksi
+  if (sources.includes("google") || sources.includes("serper") || 
+      sources.includes("tyomarkkinatori") || sources.includes("duunitori") ||
+      sources.includes("demo")) {
     try {
-      const jobs = await scoutTyomarkkinatori(profile, perSourceLimit);
-      results.push({
-        jobs,
-        source: "tyomarkkinatori",
-        count: jobs.length,
-      });
+      const jobs = await scoutGoogleJobs(profile, maxResults);
+      if (jobs.length > 0) {
+        results.push({
+          jobs,
+          source: "google",
+          count: jobs.length,
+        });
+        console.log(`[Scout] Google Jobs found ${jobs.length} jobs`);
+      }
     } catch (error) {
-      console.error("[Scout] Työmarkkinatori error:", error);
+      console.error("[Scout] Google Jobs error:", error);
     }
   }
 
-  // Duunitori
-  if (sources.includes("duunitori")) {
-    try {
-      const jobs = await scoutDuunitori(profile, perSourceLimit);
-      results.push({
-        jobs,
-        source: "duunitori",
-        count: jobs.length,
-      });
-    } catch (error) {
-      console.error("[Scout] Duunitori error:", error);
-    }
-  }
-
-  // Oikotie
-  if (sources.includes("oikotie")) {
-    try {
-      const jobs = await scoutOikotie(profile, perSourceLimit);
-      results.push({
-        jobs,
-        source: "oikotie",
-        count: jobs.length,
-      });
-    } catch (error) {
-      console.error("[Scout] Oikotie error:", error);
-    }
-  }
-
-  // Demo data fallback
-  if (sources.includes("demo") || results.length === 0) {
-    const demoJobs = await scoutDemoJobs(profile, perSourceLimit);
-    results.push({
-      jobs: demoJobs,
-      source: "demo",
-      count: demoJobs.length,
-    });
+  if (results.length === 0) {
+    console.warn("[Scout] No jobs found - check SERPER_API_KEY environment variable");
   }
 
   return results;
 }
 
 /**
- * TE-palvelujen Työmarkkinatori API
- * Dokumentaatio: https://tyomarkkinatori.fi/api
+ * Serper.dev Google Jobs API
+ * https://serper.dev/google-jobs-api
+ * 
+ * Ilmainen tier: 2500 hakua/kk
+ * Tarvitsee SERPER_API_KEY ympäristömuuttujan
  */
-async function scoutTyomarkkinatori(profile: Profile, maxResults: number): Promise<InsertJob[]> {
+async function scoutGoogleJobs(profile: Profile, maxResults: number): Promise<InsertJob[]> {
   const jobs: InsertJob[] = [];
   
+  const apiKey = process.env.SERPER_API_KEY;
+  if (!apiKey) {
+    console.warn("[Scout] SERPER_API_KEY not set");
+    return jobs;
+  }
+
   // Parse profile data
-  let skills: string[] = [];
   let preferredTitles: string[] = [];
   let preferredLocations: string[] = [];
   
   try {
-    if (profile.skills) skills = JSON.parse(profile.skills);
     if (profile.preferredJobTitles) preferredTitles = JSON.parse(profile.preferredJobTitles);
     if (profile.preferredLocations) preferredLocations = JSON.parse(profile.preferredLocations);
   } catch (e) {
     console.error("[Scout] Profile parse error:", e);
   }
 
-  // Build search query
-  const searchTerms = [...preferredTitles, ...skills.slice(0, 3)].filter(Boolean);
-  const query = searchTerms.length > 0 ? searchTerms.join(" ") : "software developer";
-  
-  // Location mapping for Työmarkkinatori
-  const locationMapping: Record<string, string> = {
-    "helsinki": "091",
-    "espoo": "049",
-    "tampere": "837",
-    "turku": "853",
-    "oulu": "564",
-    "vantaa": "092",
-    "jyväskylä": "179",
-    "kuopio": "297",
-    "lahti": "398",
-  };
+  const searchTerm = preferredTitles[0] || profile.currentTitle || "software developer";
+  const location = preferredLocations[0] || "Helsinki";
+  const query = `${searchTerm} ${location}`;
 
-  // Get municipality codes for preferred locations
-  const municipalities = preferredLocations
-    .map(loc => locationMapping[loc.toLowerCase()])
-    .filter(Boolean);
+  console.log(`[Scout] Searching Google Jobs for: "${query}"`);
 
   try {
-    // Työmarkkinatori API endpoint
-    const baseUrl = "https://paikat.te-palvelut.fi/tpt-api/v1/tyopaikat";
-    const params = new URLSearchParams({
-      hakusana: query,
-      rows: String(Math.min(maxResults, 100)),
-      sort: "julkaistu desc",
-    });
-
-    if (municipalities.length > 0) {
-      params.set("kunta", municipalities.join(","));
-    }
-
-    const response = await fetch(`${baseUrl}?${params}`, {
+    const response = await fetch("https://google.serper.dev/jobs", {
+      method: "POST",
       headers: {
-        "Accept": "application/json",
-        "User-Agent": "JobScoutAgent/1.0",
+        "X-API-KEY": apiKey,
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify({
+        q: query,
+        gl: "fi",
+        hl: "fi",
+        num: Math.min(maxResults, 100),
+      }),
     });
 
     if (!response.ok) {
-      console.error(`[Scout] Työmarkkinatori API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`[Scout] Serper API error: ${response.status} - ${errorText}`);
       return jobs;
     }
 
     const data = await response.json();
-    const listings = data.response?.docs || data.ilmoitukset || [];
+    const listings = data.jobs || [];
+
+    console.log(`[Scout] Serper returned ${listings.length} raw jobs`);
 
     for (const listing of listings.slice(0, maxResults)) {
       const job: InsertJob = {
-        externalId: listing.id || listing.ilmoitusnumero || `tm-${Date.now()}-${Math.random()}`,
-        source: "tyomarkkinatori",
-        title: listing.otsikko || listing.tehtavanimike || "Työnhakuilmoitus",
-        company: listing.tyonantajanNimi || listing.yritys || "Yritys ei tiedossa",
-        description: listing.kuvausteksti || listing.kuvaus || "",
-        location: listing.sijainti || listing.tyonSuorituspaikka || "",
-        employmentType: mapEmploymentType(listing.tyoaika),
-        remoteType: listing.etamahdollisuus ? "remote" : "on-site",
-        industry: listing.ammattiala || "",
-        postedAt: listing.julkaistu ? new Date(listing.julkaistu) : new Date(),
-        expiresAt: listing.hakuPaattyy ? new Date(listing.hakuPaattyy) : undefined,
-        url: `https://paikat.te-palvelut.fi/tpt/${listing.id || listing.ilmoitusnumero}`,
+        externalId: listing.link ? `google-${hashString(listing.link)}` : `google-${Date.now()}-${Math.random()}`,
+        source: "google",
+        title: listing.title || "Työpaikka",
+        company: listing.companyName || "Yritys",
+        description: listing.description || listing.snippet || "",
+        location: listing.location || location,
+        employmentType: mapEmploymentType(listing.employmentType),
+        remoteType: listing.location?.toLowerCase().includes("remote") ? "remote" : "on-site",
+        industry: listing.category || "",
+        postedAt: parseDate(listing.date) || new Date(),
+        url: listing.link || "",
       };
-
       jobs.push(job);
     }
+
+    console.log(`[Scout] Processed ${jobs.length} jobs for "${query}"`);
   } catch (error) {
-    console.error("[Scout] Työmarkkinatori fetch error:", error);
+    console.error("[Scout] Serper fetch error:", error);
   }
 
   return jobs;
 }
 
-/**
- * Duunitori scraping
- */
-async function scoutDuunitori(profile: Profile, maxResults: number): Promise<InsertJob[]> {
-  const jobs: InsertJob[] = [];
-
-  let preferredTitles: string[] = [];
-  let preferredLocations: string[] = [];
-  
-  try {
-    if (profile.preferredJobTitles) preferredTitles = JSON.parse(profile.preferredJobTitles);
-    if (profile.preferredLocations) preferredLocations = JSON.parse(profile.preferredLocations);
-  } catch (e) {}
-
-  const searchTerm = preferredTitles[0] || "developer";
-  const location = preferredLocations[0] || "helsinki";
-
-  try {
-    // Duunitori search URL
-    const url = `https://duunitori.fi/tyopaikat?haku=${encodeURIComponent(searchTerm)}&alue=${encodeURIComponent(location)}`;
-    
-    const response = await fetch(url, {
-      headers: {
-        "Accept": "text/html",
-        "User-Agent": "Mozilla/5.0 (compatible; JobScoutAgent/1.0)",
-      },
-    });
-
-    if (!response.ok) {
-      console.error(`[Scout] Duunitori error: ${response.status}`);
-      return jobs;
-    }
-
-    const html = await response.text();
-    
-    // Parse job listings from HTML
-    // Note: This is a basic implementation, might need adjustment
-    const jobRegex = /<article[^>]*class="[^"]*job-box[^"]*"[^>]*>[\s\S]*?<\/article>/gi;
-    const matches = html.match(jobRegex) || [];
-
-    for (const match of matches.slice(0, maxResults)) {
-      // Extract job details from HTML
-      const titleMatch = match.match(/<h3[^>]*>([\s\S]*?)<\/h3>/i);
-      const companyMatch = match.match(/class="[^"]*company[^"]*"[^>]*>([\s\S]*?)<\//i);
-      const linkMatch = match.match(/href="(\/tyopaikat\/[^"]+)"/i);
-      const locationMatch = match.match(/class="[^"]*location[^"]*"[^>]*>([\s\S]*?)<\//i);
-
-      if (titleMatch && linkMatch) {
-        const job: InsertJob = {
-          externalId: `duunitori-${linkMatch[1].split("/").pop() || Date.now()}`,
-          source: "duunitori",
-          title: stripHtml(titleMatch[1]),
-          company: companyMatch ? stripHtml(companyMatch[1]) : "Yritys",
-          description: "",
-          location: locationMatch ? stripHtml(locationMatch[1]) : location,
-          url: `https://duunitori.fi${linkMatch[1]}`,
-          postedAt: new Date(),
-        };
-        jobs.push(job);
-      }
-    }
-  } catch (error) {
-    console.error("[Scout] Duunitori fetch error:", error);
+function hashString(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
   }
-
-  return jobs;
-}
-
-/**
- * Oikotie Työpaikat scraping
- */
-async function scoutOikotie(profile: Profile, maxResults: number): Promise<InsertJob[]> {
-  const jobs: InsertJob[] = [];
-
-  let preferredTitles: string[] = [];
-  let preferredLocations: string[] = [];
-  
-  try {
-    if (profile.preferredJobTitles) preferredTitles = JSON.parse(profile.preferredJobTitles);
-    if (profile.preferredLocations) preferredLocations = JSON.parse(profile.preferredLocations);
-  } catch (e) {}
-
-  const searchTerm = preferredTitles[0] || "ohjelmoija";
-  const location = preferredLocations[0] || "helsinki";
-
-  try {
-    // Oikotie search URL
-    const url = `https://tyopaikat.oikotie.fi/tyopaikat?hakusana=${encodeURIComponent(searchTerm)}&sijainti=${encodeURIComponent(location)}`;
-    
-    const response = await fetch(url, {
-      headers: {
-        "Accept": "text/html",
-        "User-Agent": "Mozilla/5.0 (compatible; JobScoutAgent/1.0)",
-      },
-    });
-
-    if (!response.ok) {
-      console.error(`[Scout] Oikotie error: ${response.status}`);
-      return jobs;
-    }
-
-    const html = await response.text();
-    
-    // Parse job listings - Oikotie uses JSON-LD
-    const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/gi);
-    
-    if (jsonLdMatch) {
-      for (const match of jsonLdMatch) {
-        try {
-          const jsonContent = match.replace(/<script[^>]*>|<\/script>/gi, "");
-          const data = JSON.parse(jsonContent);
-          
-          if (data["@type"] === "JobPosting") {
-            const job: InsertJob = {
-              externalId: `oikotie-${data.identifier || Date.now()}`,
-              source: "oikotie",
-              title: data.title || "Työpaikka",
-              company: data.hiringOrganization?.name || "Yritys",
-              description: data.description || "",
-              location: data.jobLocation?.address?.addressLocality || location,
-              salaryMin: data.baseSalary?.value?.minValue,
-              salaryMax: data.baseSalary?.value?.maxValue,
-              employmentType: data.employmentType,
-              url: data.url || url,
-              postedAt: data.datePosted ? new Date(data.datePosted) : new Date(),
-              expiresAt: data.validThrough ? new Date(data.validThrough) : undefined,
-            };
-            jobs.push(job);
-          }
-        } catch (e) {
-          // JSON parse error, skip
-        }
-      }
-    }
-  } catch (error) {
-    console.error("[Scout] Oikotie fetch error:", error);
-  }
-
-  return jobs.slice(0, maxResults);
-}
-
-/**
- * Demo-data fallback
- */
-async function scoutDemoJobs(profile: Profile, maxResults: number): Promise<InsertJob[]> {
-  const demoJobs: InsertJob[] = [];
-
-  let skills: string[] = [];
-  let preferredTitles: string[] = [];
-  let preferredLocations: string[] = [];
-
-  try {
-    if (profile.skills) skills = JSON.parse(profile.skills);
-    if (profile.preferredJobTitles) preferredTitles = JSON.parse(profile.preferredJobTitles);
-    if (profile.preferredLocations) preferredLocations = JSON.parse(profile.preferredLocations);
-  } catch (e) {}
-
-  const companies = [
-    { name: "TechCorp Finland", rating: 85 },
-    { name: "Nordic Software Solutions", rating: 90 },
-    { name: "Helsinki AI Labs", rating: 95 },
-    { name: "Suomi Digital", rating: 80 },
-    { name: "Innovation Hub Oy", rating: 88 },
-    { name: "Future Tech Finland", rating: 92 },
-  ];
-
-  const jobTitles = preferredTitles.length > 0 
-    ? preferredTitles 
-    : ["Software Developer", "Full Stack Developer", "Frontend Developer"];
-
-  const locations = preferredLocations.length > 0
-    ? preferredLocations
-    : ["Helsinki", "Espoo", "Tampere"];
-
-  const count = Math.min(maxResults, 10);
-
-  for (let i = 0; i < count; i++) {
-    const company = companies[i % companies.length];
-    const title = jobTitles[i % jobTitles.length];
-    const location = locations[i % locations.length];
-
-    const job: InsertJob = {
-      externalId: `demo-${Date.now()}-${i}`,
-      source: "demo",
-      title: `${title}`,
-      company: company.name,
-      description: `Etsimme motivoitunutta ${title.toLowerCase()}a tiimimme. Demo-työpaikka testausta varten.`,
-      location,
-      salaryMin: 3500 + (i * 200),
-      salaryMax: 5000 + (i * 200),
-      employmentType: "full-time",
-      remoteType: i % 3 === 0 ? "remote" : i % 3 === 1 ? "hybrid" : "on-site",
-      industry: "Technology",
-      requiredSkills: JSON.stringify(skills.slice(0, 5) || ["JavaScript", "React"]),
-      experienceRequired: Math.floor(i / 2) + 1,
-      postedAt: new Date(Date.now() - (i * 24 * 60 * 60 * 1000)),
-      url: `https://example.com/demo-job-${i + 1}`,
-      companyRating: company.rating,
-    };
-
-    demoJobs.push(job);
-  }
-
-  return demoJobs;
-}
-
-// Helper functions
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, "").trim();
+  return Math.abs(hash).toString(36);
 }
 
 function mapEmploymentType(type: string | undefined): string {
   if (!type) return "full-time";
   const lower = type.toLowerCase();
-  if (lower.includes("osa-aika") || lower.includes("part")) return "part-time";
-  if (lower.includes("määräaika") || lower.includes("contract")) return "contract";
+  if (lower.includes("part")) return "part-time";
+  if (lower.includes("contract") || lower.includes("temp")) return "contract";
+  if (lower.includes("intern")) return "internship";
   return "full-time";
+}
+
+function parseDate(dateStr: string | undefined): Date | undefined {
+  if (!dateStr) return undefined;
+  const now = new Date();
+  const lower = dateStr.toLowerCase();
+  
+  if (lower.includes("hour")) {
+    const hours = parseInt(lower) || 1;
+    return new Date(now.getTime() - hours * 60 * 60 * 1000);
+  }
+  if (lower.includes("day")) {
+    const days = parseInt(lower) || 1;
+    return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  }
+  if (lower.includes("week")) {
+    const weeks = parseInt(lower) || 1;
+    return new Date(now.getTime() - weeks * 7 * 24 * 60 * 60 * 1000);
+  }
+  if (lower.includes("month")) {
+    const months = parseInt(lower) || 1;
+    return new Date(now.getTime() - months * 30 * 24 * 60 * 60 * 1000);
+  }
+  
+  const parsed = new Date(dateStr);
+  return isNaN(parsed.getTime()) ? undefined : parsed;
 }
