@@ -380,8 +380,8 @@ export async function createMatch(match: InsertMatch) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.execute(sql`
-    INSERT INTO matches (userId, jobId, score, reasons, status)
-    VALUES (${match.userId}, ${match.jobId}, ${match.score || 0}, ${match.reasons || null}, ${match.status || 'new'})
+    INSERT INTO matches (userId, jobId, totalScore, skillScore, experienceScore, locationScore, salaryScore, industryScore, companyScore, matchCategory, status)
+    VALUES (${match.userId}, ${match.jobId}, ${match.totalScore || 0}, ${match.skillScore || 0}, ${match.experienceScore || 0}, ${match.locationScore || 0}, ${match.salaryScore || 0}, ${match.industryScore || 0}, ${match.companyScore || 0}, ${match.matchCategory || 'weak'}, ${match.status || 'new'})
   `);
 }
 
