@@ -219,7 +219,11 @@ export async function createEvent(event: InsertEvent) {
     return (existing[0] as any[])[0];
   }
 
-  await db.insert(events).values(event);
+  // Use raw SQL for insert to avoid Drizzle ORM syntax bug
+  await db.execute(sql`
+    INSERT INTO events (companyId, eventType, headline, summary, sourceUrl, impactStrength, functionFocus, affectedCount, confidence, publishedAt)
+    VALUES (${event.companyId}, ${event.eventType}, ${event.headline}, ${event.summary || null}, ${event.sourceUrl || null}, ${event.impactStrength || 3}, ${event.functionFocus || null}, ${event.affectedCount || null}, ${event.confidence || 0.8}, ${event.publishedAt || new Date()})
+  `);
   
   const created = await db.execute(sql`
     SELECT * FROM events 
