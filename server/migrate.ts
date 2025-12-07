@@ -81,7 +81,7 @@ export async function runMigrations() {
       CREATE TABLE IF NOT EXISTS conversations (
         id INT AUTO_INCREMENT PRIMARY KEY,
         userId INT NOT NULL,
-        agentType ENUM('career_coach', 'job_analyzer', 'company_intel', 'interview_prep', 'negotiator') NOT NULL,
+        agentType ENUM('career_coach', 'job_analyzer', 'company_intel', 'interview_prep', 'negotiator', 'signal_scout') NOT NULL,
         title VARCHAR(255) NOT NULL,
         createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
         updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,
@@ -91,6 +91,17 @@ export async function runMigrations() {
       )
     `);
     console.log("[Migrate] ✓ conversations table created");
+
+    // Add signal_scout to agentType ENUM if table already exists
+    try {
+      await db.execute(sql`
+        ALTER TABLE conversations 
+        MODIFY COLUMN agentType ENUM('career_coach', 'job_analyzer', 'company_intel', 'interview_prep', 'negotiator', 'signal_scout') NOT NULL
+      `);
+      console.log("[Migrate] ✓ signal_scout added to agentType enum");
+    } catch (e: any) {
+      // May fail if already correct, ignore
+    }
 
     // Messages table
     await db.execute(sql`
