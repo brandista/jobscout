@@ -403,6 +403,293 @@ export const generateQuestionsTool: AgentTool = {
   },
 };
 
+// ============================================================================
+// VÄINÖ (Signal Scout) TOOLS
+// ============================================================================
+
+// Tool: Analyze company signals for hiring prediction
+export const analyzeCompanySignalsTool: AgentTool = {
+  name: "analyze_company_signals",
+  description: `Kerää ja analysoi kaikki rekrytointisignaalit yrityksestä.
+Signaalit: YTJ (liikevaihto, henkilöstö), uutiset (rahoitus, kasvu, YT), GitHub (aktiviteetti).
+Palauttaa: kokonaispistemäärän (0-100), ennusteen ja toimintaohjeet.`,
+  parameters: {
+    type: "object",
+    properties: {
+      companyName: { 
+        type: "string", 
+        description: "Yrityksen nimi (esim. 'Reaktor', 'Futurice')" 
+      },
+    },
+    required: ["companyName"],
+  },
+  execute: async (args, context) => {
+    const companyName = args.companyName;
+    
+    // Collect signals from multiple sources
+    const signals: any = {
+      companyName,
+      collectedAt: new Date().toISOString(),
+      ytj: null,
+      news: [],
+      github: null,
+    };
+    
+    // 1. Search for news/signals via Serper
+    try {
+      const SERPER_API_KEY = process.env.SERPER_API_KEY;
+      if (SERPER_API_KEY) {
+        const newsResponse = await fetch("https://google.serper.dev/search", {
+          method: "POST",
+          headers: {
+            "X-API-KEY": SERPER_API_KEY,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            q: `"${companyName}" rekrytointi OR rahoitus OR kasvu OR YT-neuvottelut OR laajentuminen 2024 2025`,
+            gl: "fi",
+            hl: "fi",
+            num: 10,
+          }),
+        });
+        
+        if (newsResponse.ok) {
+          const newsData = await newsResponse.json();
+          signals.news = (newsData.organic || []).slice(0, 5).map((item: any) => ({
+            headline: item.title,
+            snippet: item.snippet,
+            url: item.link,
+            source: new URL(item.link).hostname,
+          }));
+        }
+      }
+    } catch (e) {
+      console.error("[SignalScout] News fetch error:", e);
+    }
+    
+    // 2. Try to get company from DB
+    try {
+      const { getCompanyByName, getEventsByCompanyId, getJobsByCompanyId } = await import("../../db");
+      const company = await getCompanyByName(companyName);
+      if (company) {
+        const events = await getEventsByCompanyId(company.id, 10);
+        const jobs = await getJobsByCompanyId(company.id, 20);
+        signals.dbCompany = {
+          name: company.name,
+          industry: company.industry,
+          events: events.map((e: any) => ({
+            type: e.eventType,
+            headline: e.headline,
+            impact: e.impactStrength,
+          })),
+          openPositions: jobs.length,
+        };
+      }
+    } catch (e) {
+      console.error("[SignalScout] DB lookup error:", e);
+    }
+    
+    // 3. Calculate signal score
+    let score = 50; // Base score
+    let positiveSignals: string[] = [];
+    let negativeSignals: string[] = [];
+    
+    // Analyze news headlines for signals
+    for (const news of signals.news) {
+      const headline = (news.headline + " " + news.snippet).toLowerCase();
+      
+      if (headline.includes("rahoitus") || headline.includes("sijoitus") || headline.includes("miljoon")) {
+        score += 20;
+        positiveSignals.push("Rahoituskierros/sijoitus havaittu");
+      }
+      if (headline.includes("kasv") || headline.includes("laajent")) {
+        score += 15;
+        positiveSignals.push("Kasvusignaali havaittu");
+      }
+      if (headline.includes("rekrytoi") || headline.includes("palkkaa") || headline.includes("hiring")) {
+        score += 25;
+        positiveSignals.push("Aktiivinen rekrytointi");
+      }
+      if (headline.includes("yt-neuvottelu") || headline.includes("irtisano") || headline.includes("lomaut")) {
+        score -= 30;
+        negativeSignals.push("YT-neuvottelut tai irtisanomiset");
+      }
+    }
+    
+    // Cap score
+    score = Math.max(0, Math.min(100, score));
+    
+    // Generate prediction
+    let prediction = {
+      probability: score,
+      confidence: score > 70 ? "high" : score > 40 ? "medium" : "low",
+      timing: score > 70 ? "30-60 päivää" : score > 50 ? "60-90 päivää" : "90+ päivää",
+      recommendation: "",
+    };
+    
+    if (score >= 70) {
+      prediction.recommendation = "Vahvat signaalit! Ota yhteyttä HR:ään tai verkostoidu LinkedInissä NYT.";
+    } else if (score >= 50) {
+      prediction.recommendation = "Kohtalaisia signaaleja. Seuraa yritystä ja valmistaudu hakemaan.";
+    } else {
+      prediction.recommendation = "Heikkoja signaaleja. Odota parempia merkkejä tai etsi muita kohteita.";
+    }
+    
+    return {
+      company: companyName,
+      score,
+      confidence: prediction.confidence,
+      timing: prediction.timing,
+      signals: {
+        positive: positiveSignals,
+        negative: negativeSignals,
+      },
+      newsFound: signals.news.length,
+      prediction: prediction.recommendation,
+      news: signals.news.slice(0, 3),
+      dbData: signals.dbCompany || null,
+    };
+  },
+};
+
+// Tool: Search news signals
+export const searchNewsSignalsTool: AgentTool = {
+  name: "search_news_signals",
+  description: `Hae tuoreita uutisia ja lehdistötiedotteita yrityksestä.
+Tunnistaa: rahoituskierrokset, laajentuminen, YT-neuvottelut, johtajamuutokset.`,
+  parameters: {
+    type: "object",
+    properties: {
+      companyName: { type: "string", description: "Yrityksen nimi" },
+      keywords: { 
+        type: "array", 
+        items: { type: "string" },
+        description: "Lisäavainsanat hakuun" 
+      },
+    },
+    required: ["companyName"],
+  },
+  execute: async (args) => {
+    const SERPER_API_KEY = process.env.SERPER_API_KEY;
+    if (!SERPER_API_KEY) {
+      return { error: "Hakupalvelu ei käytettävissä" };
+    }
+    
+    const keywords = args.keywords?.join(" OR ") || "rekrytointi kasvu rahoitus";
+    
+    const response = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      headers: {
+        "X-API-KEY": SERPER_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        q: `"${args.companyName}" ${keywords} 2024 2025`,
+        gl: "fi",
+        hl: "fi",
+        num: 10,
+      }),
+    });
+    
+    if (!response.ok) {
+      return { error: "Haku epäonnistui" };
+    }
+    
+    const data = await response.json();
+    const news = (data.organic || []).map((item: any) => {
+      // Analyze sentiment
+      const text = (item.title + " " + item.snippet).toLowerCase();
+      let sentiment = "neutral";
+      let signalType = "none";
+      
+      if (text.includes("rahoitus") || text.includes("kasv") || text.includes("rekrytoi")) {
+        sentiment = "positive";
+        signalType = text.includes("rahoitus") ? "funding" : text.includes("rekrytoi") ? "hiring" : "growth";
+      }
+      if (text.includes("yt-") || text.includes("irtisano") || text.includes("lomaut")) {
+        sentiment = "negative";
+        signalType = "layoffs";
+      }
+      
+      return {
+        headline: item.title,
+        snippet: item.snippet,
+        url: item.link,
+        source: new URL(item.link).hostname,
+        sentiment,
+        signalType,
+      };
+    });
+    
+    return {
+      company: args.companyName,
+      newsCount: news.length,
+      news: news.slice(0, 5),
+      summary: news.length > 0 
+        ? `Löydettiin ${news.length} uutista. ${news.filter((n: any) => n.sentiment === "positive").length} positiivista signaalia.`
+        : "Ei tuoreita uutisia löytynyt.",
+    };
+  },
+};
+
+// Tool: Get hiring prediction
+export const getHiringPredictionTool: AgentTool = {
+  name: "get_hiring_prediction",
+  description: `Laske ennuste yrityksen rekrytointitodennäköisyydestä tietylle roolille.`,
+  parameters: {
+    type: "object",
+    properties: {
+      companyName: { type: "string", description: "Yrityksen nimi" },
+      roleType: { 
+        type: "string", 
+        description: "Rooli johon ennuste kohdistuu (esim. 'developer', 'sales', 'marketing')" 
+      },
+    },
+    required: ["companyName"],
+  },
+  execute: async (args, context) => {
+    // Use the main signal analysis
+    const signalResult = await analyzeCompanySignalsTool.execute(
+      { companyName: args.companyName },
+      context
+    );
+    
+    // Adjust for role type if specified
+    let roleMultiplier = 1.0;
+    let roleNote = "";
+    
+    if (args.roleType) {
+      const role = args.roleType.toLowerCase();
+      if (role.includes("dev") || role.includes("engineer") || role.includes("tech")) {
+        roleMultiplier = 1.1;
+        roleNote = "Tech-roolit yleisesti kysyttyjä kasvuyrityksissä.";
+      } else if (role.includes("sales") || role.includes("myynti")) {
+        roleMultiplier = 1.05;
+        roleNote = "Myyntiroolit usein ensimmäisiä kasvurekryissä.";
+      }
+    }
+    
+    const adjustedScore = Math.min(100, Math.round(signalResult.score * roleMultiplier));
+    
+    return {
+      company: args.companyName,
+      roleType: args.roleType || "yleinen",
+      prediction: {
+        probability: `${adjustedScore}%`,
+        confidence: signalResult.confidence,
+        timing: signalResult.timing,
+        roleNote,
+      },
+      keySignals: [
+        ...signalResult.signals.positive,
+        ...signalResult.signals.negative.map((s: string) => `⚠️ ${s}`),
+      ],
+      recommendation: signalResult.prediction,
+      profileMatch: context.profile ? "Profiilisi huomioitu ennusteessa" : "Täytä profiili tarkempaan ennusteeseen",
+    };
+  },
+};
+
 // Export all tools
 export const ALL_TOOLS: AgentTool[] = [
   searchJobsTool,
@@ -412,6 +699,9 @@ export const ALL_TOOLS: AgentTool[] = [
   profileGapsTool,
   salaryInsightsTool,
   generateQuestionsTool,
+  analyzeCompanySignalsTool,
+  searchNewsSignalsTool,
+  getHiringPredictionTool,
 ];
 
 // Tool registry by agent type
@@ -421,6 +711,7 @@ export const AGENT_TOOLS: Record<string, AgentTool[]> = {
   company_intel: [analyzeCompanyTool, searchJobsTool],
   interview_prep: [generateQuestionsTool, analyzeJobTool, analyzeCompanyTool],
   negotiator: [salaryInsightsTool, analyzeJobTool, analyzeCompanyTool],
+  signal_scout: [analyzeCompanySignalsTool, searchNewsSignalsTool, getHiringPredictionTool, analyzeCompanyTool],
 };
 
 export function getToolsForAgent(agentType: string): AgentTool[] {

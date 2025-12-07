@@ -696,7 +696,7 @@ export const appRouter = router({
     chat: protectedProcedure
       .input(z.object({
         conversationId: z.number().optional(),
-        agentType: z.enum(["career_coach", "job_analyzer", "company_intel", "interview_prep", "negotiator"]),
+        agentType: z.enum(["career_coach", "job_analyzer", "company_intel", "interview_prep", "negotiator", "signal_scout"]),
         message: z.string().min(1).max(10000),
         fileBase64: z.string().optional(),
         fileName: z.string().optional(),

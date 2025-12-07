@@ -31,6 +31,8 @@ import jobAnalyzerImg from "@/assets/agents/jobscout_job_analyzer.png";
 import companyIntelImg from "@/assets/agents/jobscout_company_intel.png";
 import interviewPrepImg from "@/assets/agents/jobscout_interview_prep.png";
 import negotiatorImg from "@/assets/agents/jobscout_negotiator.png";
+// Väinö uses a placeholder until avatar is ready
+import signalScoutImg from "@/assets/agents/jobscout_signal_scout.png";
 
 // Agent definitions matching backend
 const AGENTS = {
@@ -78,6 +80,15 @@ const AGENTS = {
     avatar: negotiatorImg,
     color: "#EF4444",
     gradient: "from-red-500 to-rose-600",
+  },
+  signal_scout: {
+    id: "signal_scout",
+    name: "Väinö",
+    role: "Signaalitietäjä",
+    description: "Ennustaa rekrytoinnit ennen kuin paikat julkaistaan",
+    avatar: signalScoutImg,
+    color: "#6366F1",
+    gradient: "from-indigo-500 to-purple-600",
   },
 };
 
@@ -568,6 +579,31 @@ export default function Agents() {
                               <Search className="w-4 h-4 mr-2" />
                               Hae yritystietoja
                             </Button>
+                          )}
+                          {selectedAgent === "signal_scout" && (
+                            <>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => {
+                                  const company = prompt("Minkä yrityksen signaaleja haluat analysoida?");
+                                  if (company) {
+                                    setInputValue(`Analysoi rekrytointisignaalit: ${company}`);
+                                  }
+                                }}
+                              >
+                                <Sparkles className="w-4 h-4 mr-2" />
+                                Analysoi signaalit
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => setInputValue("Mitkä yritykset rekrytoivat todennäköisesti lähiaikoina?")}
+                              >
+                                <Search className="w-4 h-4 mr-2" />
+                                Etsi kuumia yrityksiä
+                              </Button>
+                            </>
                           )}
                         </div>
                       </div>

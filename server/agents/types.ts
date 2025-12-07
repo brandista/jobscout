@@ -7,7 +7,8 @@ export type AgentType =
   | "job_analyzer" 
   | "company_intel"
   | "interview_prep"
-  | "negotiator";
+  | "negotiator"
+  | "signal_scout";
 
 export interface AgentInfo {
   id: AgentType;
@@ -99,6 +100,22 @@ export const AGENTS: Record<AgentType, AgentInfo> = {
       "Offer comparison",
       "Benefits analysis",
       "Counter-offer tactics"
+    ]
+  },
+  signal_scout: {
+    id: "signal_scout",
+    name: "Väinö",
+    nameFi: "Signaalitietäjä",
+    description: "Predictive hiring intelligence - sees recruitment signals before jobs are posted",
+    descriptionFi: "Ennustava rekrytointitiedustelu - näkee signaalit ennen kuin paikat julkaistaan",
+    icon: "🔮",
+    color: "#6366F1",
+    capabilities: [
+      "YTJ/PRH company data analysis",
+      "News & funding signal detection",
+      "GitHub activity monitoring",
+      "Hiring probability prediction",
+      "Company watchlist & alerts"
     ]
   }
 };
