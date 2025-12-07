@@ -90,17 +90,18 @@ async function scoutGoogleJobs(profile: Profile, maxResults: number): Promise<In
   console.log(`[Scout] Searching Google Jobs for: "${query}"`);
 
   try {
-    const response = await fetch("https://google.serper.dev/jobs", {
+    // Käytetään search-endpointia jobs-spesifisellä haulla
+    const response = await fetch("https://google.serper.dev/search", {
       method: "POST",
       headers: {
         "X-API-KEY": apiKey,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        q: query,
+        q: `${query} työpaikka OR avoin paikka OR rekrytointi`,
         gl: "fi",
         hl: "fi",
-        num: Math.min(maxResults, 100),
+        num: Math.min(maxResults, 20),
       }),
     });
 
@@ -111,22 +112,28 @@ async function scoutGoogleJobs(profile: Profile, maxResults: number): Promise<In
     }
 
     const data = await response.json();
-    const listings = data.jobs || [];
+    // Search API palauttaa organic results, ei jobs
+    const listings = data.organic || [];
 
-    console.log(`[Scout] Serper returned ${listings.length} raw jobs`);
+    console.log(`[Scout] Serper returned ${listings.length} search results`);
 
     for (const listing of listings.slice(0, maxResults)) {
+      // Parsitaan työpaikkatiedot hakutuloksista
+      const titleParts = (listing.title || "").split(" - ");
+      const jobTitle = titleParts[0]?.trim() || "Työpaikka";
+      const company = titleParts.length > 1 ? titleParts[titleParts.length - 1]?.trim() : "Yritys";
+      
       const job: InsertJob = {
         externalId: listing.link ? `google-${hashString(listing.link)}` : `google-${Date.now()}-${Math.random()}`,
         source: "google",
-        title: listing.title || "Työpaikka",
-        company: listing.companyName || "Yritys",
-        description: listing.description || listing.snippet || "",
-        location: listing.location || location,
-        employmentType: mapEmploymentType(listing.employmentType),
-        remoteType: listing.location?.toLowerCase().includes("remote") ? "remote" : "on-site",
-        industry: listing.category || "",
-        postedAt: parseDate(listing.date) || new Date(),
+        title: jobTitle,
+        company: company,
+        description: listing.snippet || "",
+        location: location,
+        employmentType: "full-time",
+        remoteType: "on-site",
+        industry: "",
+        postedAt: new Date(),
         url: listing.link || "",
       };
       jobs.push(job);
