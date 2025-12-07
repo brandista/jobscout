@@ -662,20 +662,30 @@ export const appRouter = router({
         
         const scores = await getTopCompanyScores(ctx.user.id, input.limit);
         
-        const enriched = await Promise.all(scores.map(async (s) => {
-          const events = await getEventsByCompanyId(s.company.id, 5);
-          const jobs = await getJobsByCompanyId(s.company.id, 10);
+        const enriched = await Promise.all(scores.map(async (s: any) => {
+          // Raw SQL returns flat object with company fields
+          const companyId = s.companyId;
+          const events = await getEventsByCompanyId(companyId, 5);
+          const jobs = await getJobsByCompanyId(companyId, 10);
           
           let reasons: string[] = [];
           try {
-            reasons = s.score.scoreReasons ? JSON.parse(s.score.scoreReasons) : [];
+            reasons = s.scoreReasons ? JSON.parse(s.scoreReasons) : [];
           } catch {}
 
           return {
-            company: s.company,
-            talentNeedScore: s.score.talentNeedScore,
-            profileMatchScore: s.score.profileMatchScore,
-            combinedScore: s.score.combinedScore,
+            company: {
+              id: companyId,
+              name: s.companyName,
+              nameNormalized: s.nameNormalized,
+              domain: s.domain,
+              industry: s.industry,
+              mainLocation: s.mainLocation,
+              employeeCountEstimate: s.employeeCountEstimate,
+            },
+            talentNeedScore: s.talentNeedScore,
+            profileMatchScore: s.profileMatchScore,
+            combinedScore: s.combinedScore,
             reasons,
             events,
             jobs,
