@@ -182,25 +182,45 @@ export async function runMigrations() {
     }
 
     // Add match score columns to matches table
-    const matchColumns = [
-      { name: 'totalScore', type: 'INT DEFAULT 0' },
-      { name: 'skillScore', type: 'INT DEFAULT 0' },
-      { name: 'experienceScore', type: 'INT DEFAULT 0' },
-      { name: 'locationScore', type: 'INT DEFAULT 0' },
-      { name: 'salaryScore', type: 'INT DEFAULT 0' },
-      { name: 'industryScore', type: 'INT DEFAULT 0' },
-      { name: 'companyScore', type: 'INT DEFAULT 0' },
-      { name: 'matchCategory', type: 'VARCHAR(50) DEFAULT "weak"' },
-    ];
+    try {
+      await db.execute(sql`ALTER TABLE matches ADD COLUMN totalScore INT DEFAULT 0`);
+      console.log("[Migrate] ✓ matches.totalScore added");
+    } catch (e: any) { /* Column may already exist */ }
 
-    for (const col of matchColumns) {
-      try {
-        await db.execute(sql.raw(`ALTER TABLE matches ADD COLUMN ${col.name} ${col.type}`));
-        console.log(`[Migrate] ✓ matches.${col.name} added`);
-      } catch (e: any) {
-        // Column may already exist
-      }
-    }
+    try {
+      await db.execute(sql`ALTER TABLE matches ADD COLUMN skillScore INT DEFAULT 0`);
+      console.log("[Migrate] ✓ matches.skillScore added");
+    } catch (e: any) { /* Column may already exist */ }
+
+    try {
+      await db.execute(sql`ALTER TABLE matches ADD COLUMN experienceScore INT DEFAULT 0`);
+      console.log("[Migrate] ✓ matches.experienceScore added");
+    } catch (e: any) { /* Column may already exist */ }
+
+    try {
+      await db.execute(sql`ALTER TABLE matches ADD COLUMN locationScore INT DEFAULT 0`);
+      console.log("[Migrate] ✓ matches.locationScore added");
+    } catch (e: any) { /* Column may already exist */ }
+
+    try {
+      await db.execute(sql`ALTER TABLE matches ADD COLUMN salaryScore INT DEFAULT 0`);
+      console.log("[Migrate] ✓ matches.salaryScore added");
+    } catch (e: any) { /* Column may already exist */ }
+
+    try {
+      await db.execute(sql`ALTER TABLE matches ADD COLUMN industryScore INT DEFAULT 0`);
+      console.log("[Migrate] ✓ matches.industryScore added");
+    } catch (e: any) { /* Column may already exist */ }
+
+    try {
+      await db.execute(sql`ALTER TABLE matches ADD COLUMN companyScore INT DEFAULT 0`);
+      console.log("[Migrate] ✓ matches.companyScore added");
+    } catch (e: any) { /* Column may already exist */ }
+
+    try {
+      await db.execute(sql`ALTER TABLE matches ADD COLUMN matchCategory VARCHAR(50) DEFAULT 'weak'`);
+      console.log("[Migrate] ✓ matches.matchCategory added");
+    } catch (e: any) { /* Column may already exist */ }
 
     console.log("[Migrate] Migrations complete!");
   } catch (error) {
