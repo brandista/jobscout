@@ -101,19 +101,22 @@ async function scoutSerpApiJobs(profile: Profile, maxResults: number): Promise<I
   const searchTerm = preferredTitles[0] || profile.currentTitle || "software developer";
   const location = preferredLocations[0] || "Helsinki, Finland";
 
+  console.log(`[Scout] Profile data - preferredJobTitles raw:`, profile.preferredJobTitles);
+  console.log(`[Scout] Profile data - preferredLocations raw:`, profile.preferredLocations);
   console.log(`[Scout] Searching SerpApi Google Jobs for: "${searchTerm}" in "${location}"`);
 
   try {
-    const params = new URLSearchParams({
+    // Ensimmäinen haku tarkalla sijainnilla
+    let params = new URLSearchParams({
       engine: "google_jobs",
       q: searchTerm,
       location: location,
-      hl: "fi",
+      hl: "en",  // Englanti toimii paremmin
       gl: "fi",
       api_key: apiKey,
     });
 
-    const response = await fetch(`https://serpapi.com/search.json?${params}`);
+    let response = await fetch(`https://serpapi.com/search.json?${params}`);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -121,10 +124,55 @@ async function scoutSerpApiJobs(profile: Profile, maxResults: number): Promise<I
       return jobs;
     }
 
-    const data = await response.json();
-    const listings = data.jobs_results || [];
+    let data = await response.json();
+    
+    console.log(`[Scout] SerpApi response keys:`, Object.keys(data));
+    if (data.error) {
+      console.log(`[Scout] SerpApi note:`, data.error);
+    }
+    
+    let listings = data.jobs_results || [];
+    console.log(`[Scout] SerpApi returned ${listings.length} jobs for "${searchTerm}" in "${location}"`);
 
-    console.log(`[Scout] SerpApi returned ${listings.length} jobs`);
+    // Jos ei tuloksia, kokeile laajemmalla alueella (Finland)
+    if (listings.length === 0) {
+      console.log(`[Scout] No results, trying broader search with location: Finland`);
+      params = new URLSearchParams({
+        engine: "google_jobs",
+        q: searchTerm,
+        location: "Finland",
+        hl: "en",
+        gl: "fi",
+        api_key: apiKey,
+      });
+      
+      response = await fetch(`https://serpapi.com/search.json?${params}`);
+      if (response.ok) {
+        data = await response.json();
+        listings = data.jobs_results || [];
+        console.log(`[Scout] Broader search returned ${listings.length} jobs`);
+      }
+    }
+
+    // Jos vieläkään ei tuloksia, kokeile yleisempää hakutermiä
+    if (listings.length === 0 && searchTerm !== "software developer") {
+      console.log(`[Scout] Still no results, trying generic term "jobs"`);
+      params = new URLSearchParams({
+        engine: "google_jobs",
+        q: "jobs",
+        location: "Helsinki, Finland",
+        hl: "en",
+        gl: "fi",
+        api_key: apiKey,
+      });
+      
+      response = await fetch(`https://serpapi.com/search.json?${params}`);
+      if (response.ok) {
+        data = await response.json();
+        listings = data.jobs_results || [];
+        console.log(`[Scout] Generic search returned ${listings.length} jobs`);
+      }
+    }
 
     for (const listing of listings.slice(0, maxResults)) {
       const job: InsertJob = {
