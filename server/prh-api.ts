@@ -155,8 +155,16 @@ export async function searchByCompanyName(name: string, maxResults: number = 10)
       }
     });
 
+    // 404 means no results found - not an error
+    if (response.status === 404) {
+      console.log(`[PRH] No companies found with name: ${name}`);
+      return [];
+    }
+
     if (!response.ok) {
-      throw new Error(`PRH API error: ${response.status} ${response.statusText}`);
+      console.error(`[PRH] API error: ${response.status} ${response.statusText}`);
+      return []; // Return empty array instead of throwing
+    }
     }
 
     const data = await response.json() as PrhSearchResponse;
