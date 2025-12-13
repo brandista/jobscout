@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Profile from "./pages/Profile";
 import Jobs from "./pages/Jobs";
+import JobDetail from "./pages/JobDetail";
 import Scout from "./pages/Scout";
 import SavedJobs from "./pages/SavedJobs";
 import CompanyScout from "./pages/CompanyScout";
@@ -24,6 +25,7 @@ function Router() {
       <Route path={"/auth/callback"} component={AuthCallback} />
       <Route path={"/profile"} component={Profile} />
       <Route path={"/agents"} component={Agents} />
+      <Route path={"/jobs/:id"} component={JobDetail} />
       <Route path={"/jobs"} component={Jobs} />
       <Route path={"/scout"} component={Scout} />
       <Route path={"/companies"} component={CompanyScout} />
