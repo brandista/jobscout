@@ -214,7 +214,7 @@ export const conversations = mysqlTable("conversations", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
   agentType: mysqlEnum("agentType", [
-    "career_coach", "job_analyzer", "company_intel", "interview_prep", "negotiator"
+    "career_coach", "job_analyzer", "company_intel", "interview_prep", "negotiator", "signal_scout"
   ]).notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

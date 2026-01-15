@@ -117,11 +117,16 @@ export async function upsertProfile(profile: InsertProfile) {
   const existing = await getProfileByUserId(profile.userId);
   if (existing) {
     await db.execute(sql`
-      UPDATE profiles SET 
+      UPDATE profiles SET
         currentTitle = ${profile.currentTitle || null},
-        currentCompany = ${profile.currentCompany || null},
-        yearsExperience = ${profile.yearsExperience || null},
+        yearsOfExperience = ${profile.yearsOfExperience || null},
         skills = ${profile.skills || null},
+        languages = ${profile.languages || null},
+        certifications = ${profile.certifications || null},
+        degree = ${profile.degree || null},
+        field = ${profile.field || null},
+        university = ${profile.university || null},
+        graduationYear = ${profile.graduationYear || null},
         preferredLocations = ${profile.preferredLocations || null},
         preferredJobTitles = ${profile.preferredJobTitles || null},
         preferredIndustries = ${profile.preferredIndustries || null},
@@ -130,13 +135,14 @@ export async function upsertProfile(profile: InsertProfile) {
         remotePreference = ${profile.remotePreference || null},
         employmentTypes = ${profile.employmentTypes || null},
         targetFunctions = ${profile.targetFunctions || null},
+        workHistory = ${profile.workHistory || null},
         updatedAt = NOW()
       WHERE userId = ${profile.userId}
     `);
   } else {
     await db.execute(sql`
-      INSERT INTO profiles (userId, currentTitle, currentCompany, yearsExperience, skills, preferredLocations, preferredJobTitles, preferredIndustries, salaryMin, salaryMax, remotePreference, employmentTypes, targetFunctions)
-      VALUES (${profile.userId}, ${profile.currentTitle || null}, ${profile.currentCompany || null}, ${profile.yearsExperience || null}, ${profile.skills || null}, ${profile.preferredLocations || null}, ${profile.preferredJobTitles || null}, ${profile.preferredIndustries || null}, ${profile.salaryMin || null}, ${profile.salaryMax || null}, ${profile.remotePreference || null}, ${profile.employmentTypes || null}, ${profile.targetFunctions || null})
+      INSERT INTO profiles (userId, currentTitle, yearsOfExperience, skills, languages, certifications, degree, field, university, graduationYear, preferredLocations, preferredJobTitles, preferredIndustries, salaryMin, salaryMax, remotePreference, employmentTypes, targetFunctions, workHistory)
+      VALUES (${profile.userId}, ${profile.currentTitle || null}, ${profile.yearsOfExperience || null}, ${profile.skills || null}, ${profile.languages || null}, ${profile.certifications || null}, ${profile.degree || null}, ${profile.field || null}, ${profile.university || null}, ${profile.graduationYear || null}, ${profile.preferredLocations || null}, ${profile.preferredJobTitles || null}, ${profile.preferredIndustries || null}, ${profile.salaryMin || null}, ${profile.salaryMax || null}, ${profile.remotePreference || null}, ${profile.employmentTypes || null}, ${profile.targetFunctions || null}, ${profile.workHistory || null})
     `);
   }
 }

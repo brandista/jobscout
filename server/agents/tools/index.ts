@@ -1280,7 +1280,7 @@ Palauttaa Career Coachin analyysin ja suositukset.`,
       response: `Career Coach analysoi tilanteen:
       
 Käyttäjän profiili: ${profile?.currentTitle || 'Ei määritelty'}
-Kokemus: ${profile?.yearsExperience || 'Ei tiedossa'} vuotta
+Kokemus: ${profile?.yearsOfExperience || 'Ei tiedossa'} vuotta
 
 Kysymys: "${args.question}"
 

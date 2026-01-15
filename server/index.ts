@@ -4,8 +4,8 @@
  */
 
 import OpenAI from "openai";
-import type { AgentType, ChatRequest, ChatResponse, Message, UserContext, ToolCall, ToolResult } from "./types";
-import { AGENTS } from "./types";
+import type { AgentType, ChatRequest, ChatResponse, Message, UserContext, ToolCall, ToolResult } from "./agents/types";
+import { AGENTS } from "./agents/types";
 import { buildUserContext, formatContextForPrompt } from "./context";
 import { getToolsForAgent, formatToolsForOpenAI, ALL_TOOLS } from "./tools";
 

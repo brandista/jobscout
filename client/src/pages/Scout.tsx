@@ -14,9 +14,9 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 
 const AVAILABLE_SOURCES = [
-  { id: "google", name: "Google Jobs", description: "Oikeat työpaikkailmoitukset SerpApi + Adzuna kautta" },
-  { id: "linkedin", name: "LinkedIn (tulossa)", description: "LinkedIn työpaikat - tulossa pian", disabled: true },
-  { id: "indeed", name: "Indeed (tulossa)", description: "Indeed työpaikat - tulossa pian", disabled: true },
+  { id: "google", name: "Google Jobs + Suomalaiset", description: "Duunitori, Oikotie, Monster, TE-palvelut, Kuntarekry, LinkedIn, Indeed" },
+  { id: "vantaa", name: "Vantaan avoimet paikat", description: "Vantaan kaupungin avoimet työpaikat (ilmainen)" },
+  { id: "linkedin", name: "LinkedIn Direct (tulossa)", description: "Suora LinkedIn-integraatio - tulossa pian", disabled: true },
 ];
 
 export default function Scout() {
@@ -416,18 +416,38 @@ export default function Scout() {
         </CardContent>
       </Card>
 
-      {/* Info about future features */}
+      {/* Info about supported sources */}
       <Card className="mt-6 border-dashed">
         <CardHeader>
-          <CardTitle className="text-lg">Tulevat Ominaisuudet</CardTitle>
+          <CardTitle className="text-lg">Tuetut Lähteet</CardTitle>
         </CardHeader>
         <CardContent>
-          <ul className="space-y-2 text-sm text-muted-foreground">
-            <li>• LinkedIn Jobs API -integraatio</li>
-            <li>• Indeed API -integraatio</li>
-            <li>• Piilossa olevien työpaikkojen etsintä</li>
-            <li>• Monster.fi integraatio</li>
-          </ul>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-muted-foreground">
+            <div>
+              <p className="font-medium text-foreground mb-2">Suomalaiset sivustot:</p>
+              <ul className="space-y-1">
+                <li>✅ Duunitori.fi</li>
+                <li>✅ Oikotie.fi/työpaikat</li>
+                <li>✅ Monster.fi</li>
+                <li>✅ TE-palvelut / Työmarkkinatori</li>
+                <li>✅ Kuntarekry.fi</li>
+                <li>✅ Vantaan avoimet työpaikat</li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-medium text-foreground mb-2">Kansainväliset:</p>
+              <ul className="space-y-1">
+                <li>✅ LinkedIn Jobs</li>
+                <li>✅ Indeed</li>
+                <li>✅ Yritysten omat rekrysivut</li>
+              </ul>
+              <p className="font-medium text-foreground mt-4 mb-2">Tulossa:</p>
+              <ul className="space-y-1">
+                <li>🔜 Suora LinkedIn-integraatio</li>
+                <li>🔜 Piilossa olevien paikkojen etsintä</li>
+              </ul>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>

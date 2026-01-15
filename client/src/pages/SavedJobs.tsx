@@ -113,9 +113,6 @@ export default function SavedJobs() {
                   {job.employmentType && (
                     <Badge variant="secondary">{job.employmentType}</Badge>
                   )}
-                  {job.experienceRequired && (
-                    <span>{job.experienceRequired} vuotta kokemusta</span>
-                  )}
                 </div>
 
                 {/* Saved notes */}

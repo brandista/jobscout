@@ -126,7 +126,6 @@ export async function runAutoScout(): Promise<{
                 locationScore: matchScore.locationScore,
                 salaryScore: matchScore.salaryScore,
                 matchCategory: matchScore.matchCategory,
-                matchReasons: JSON.stringify(matchScore.reasons || []),
               });
               newMatches++;
               

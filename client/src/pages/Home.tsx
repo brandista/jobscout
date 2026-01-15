@@ -27,16 +27,29 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 
-// Mock data - korvaa oikealla API-datalla integraatiossa
+// Hook for dashboard data from API
 const useDashboardData = () => {
-  // TODO: Korvaa nämä oikeilla API-kutsuilla
+  const { user } = useAuth();
+
+  // Fetch real data from API
+  const { data: savedJobsData } = trpc.savedJobs.list.useQuery(undefined, { enabled: !!user });
+  const { data: matchesData } = trpc.matches.list.useQuery({ limit: 10 }, { enabled: !!user });
+  const { data: watchlistData } = trpc.watchlist.list.useQuery(undefined, { enabled: !!user });
+  const { data: profileData } = trpc.profile.get.useQuery(undefined, { enabled: !!user });
+
+  // Calculate profile completion
+  const profileCompletion = profileData ? calculateProfileCompletion(profileData) : 0;
+
   return {
+    user,
     stats: {
-      savedJobs: 12,
-      activeMatches: 8,
-      watchlistCompanies: 5,
-      profileCompletion: 85,
+      savedJobs: savedJobsData?.length || 0,
+      activeMatches: matchesData?.length || 0,
+      watchlistCompanies: watchlistData?.length || 0,
+      profileCompletion,
     },
     recentActivity: [
       {
@@ -132,9 +145,33 @@ const useDashboardData = () => {
   };
 };
 
+// Helper function to calculate profile completion percentage
+function calculateProfileCompletion(profile: any): number {
+  if (!profile) return 0;
+
+  const fields = [
+    profile.currentTitle,
+    profile.yearsOfExperience,
+    profile.skills,
+    profile.languages,
+    profile.preferredJobTitles,
+    profile.preferredLocations,
+    profile.salaryMin,
+    profile.remotePreference,
+    profile.degree,
+    profile.workHistory,
+  ];
+
+  const filledFields = fields.filter(f => f !== null && f !== undefined && f !== '').length;
+  return Math.round((filledFields / fields.length) * 100);
+}
+
 export default function DashboardHome() {
   const [, setLocation] = useLocation();
   const data = useDashboardData();
+
+  // Get user's first name for greeting
+  const userName = data.user?.name?.split(' ')[0] || '';
 
   return (
     <DashboardLayout>
@@ -146,11 +183,14 @@ export default function DashboardHome() {
             <div className="space-y-2">
               <h1 className="text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
                 <Sparkles className="h-6 w-6 md:h-8 md:w-8" />
-                Tervetuloa takaisin!
+                Tervetuloa takaisin{userName ? `, ${userName}` : ''}!
               </h1>
               <p className="text-sm md:text-base text-white/90 max-w-xl">
-                Sinulla on <strong>{data.stats.activeMatches} aktiivista työmatcheja</strong> ja <strong>{data.stats.watchlistCompanies} yritystä</strong> watchlistillasi.
-                Väinö on havainnut uusia rekrytointisignaaleja! 🎯
+                {data.stats.activeMatches > 0 ? (
+                  <>Sinulla on <strong>{data.stats.activeMatches} aktiivista työmatcheja</strong> ja <strong>{data.stats.watchlistCompanies} yritystä</strong> watchlistillasi.</>
+                ) : (
+                  <>Aloita työpaikkojen scoutaus löytääksesi sinulle sopivia paikkoja!</>
+                )}
               </p>
             </div>
             <Button 
