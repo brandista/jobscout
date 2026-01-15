@@ -43,7 +43,22 @@ export async function scoutJobs(params: ScoutParams): Promise<ScoutResult[]> {
     console.error("[Scout] Serper.dev error:", error);
   }
 
-  // 2. Adzuna (fallback jos Serper ei löydä mitään)
+  // 2. Vantaan avoimet työpaikat (ilmainen avoin data API)
+  try {
+    const jobs = await scoutVantaaJobs(profile);
+    if (jobs.length > 0) {
+      results.push({
+        jobs,
+        source: "vantaa",
+        count: jobs.length,
+      });
+      console.log(`[Scout] Vantaa API found ${jobs.length} jobs`);
+    }
+  } catch (error) {
+    console.error("[Scout] Vantaa API error:", error);
+  }
+
+  // 3. Adzuna (fallback jos Serper ei löydä mitään)
   if (results.length === 0 || sources.includes("adzuna")) {
     try {
       const jobs = await scoutAdzunaJobs(profile, maxResults);
@@ -101,12 +116,19 @@ async function scoutSerperJobs(profile: Profile, maxResults: number): Promise<In
   console.log(`[Scout] Profile data - preferredLocations raw:`, profile.preferredLocations);
   console.log(`[Scout] Searching Serper.dev for: "${searchTerm}" in "${location}"`);
 
-  // Tee useita hakuja eri lähteille
+  // Tee useita hakuja eri lähteille - optimoitu Suomen markkinoille
   const searchQueries = [
-    `${searchTerm} jobs ${location} site:linkedin.com/jobs`,
+    // Suomalaiset sivustot ensin
     `${searchTerm} työpaikat ${location} site:duunitori.fi`,
-    `${searchTerm} jobs ${location} site:indeed.com`,
-    `${searchTerm} avoimet työpaikat ${location}`,
+    `${searchTerm} avoimet työpaikat ${location} site:oikotie.fi`,
+    `${searchTerm} rekry ${location} site:monster.fi`,
+    `${searchTerm} työpaikka ${location} site:te-palvelut.fi OR site:tyomarkkinatori.fi`,
+    `${searchTerm} jobs ${location} site:kuntarekry.fi`,
+    // Kansainväliset
+    `${searchTerm} jobs ${location} Finland site:linkedin.com/jobs`,
+    `${searchTerm} jobs ${location} site:indeed.fi OR site:indeed.com`,
+    // Yleinen haku (poimi myös yritysten omat rekrysivut)
+    `${searchTerm} avoimet työpaikat ${location} rekrytointi`,
   ];
 
   for (const query of searchQueries) {
@@ -360,4 +382,75 @@ function hashString(str: string): string {
     hash = hash & hash;
   }
   return Math.abs(hash).toString(36);
+}
+
+/**
+ * Vantaan avoimet työpaikat - Ilmainen avoin data API
+ * https://gis.vantaa.fi/rest/tyopaikat/v1
+ *
+ * Palauttaa Vantaan kaupungin avoimet työpaikat JSON-muodossa
+ */
+async function scoutVantaaJobs(profile: Profile): Promise<InsertJob[]> {
+  const jobs: InsertJob[] = [];
+
+  try {
+    console.log("[Scout] Fetching Vantaa open jobs API...");
+
+    const response = await fetch("https://gis.vantaa.fi/rest/tyopaikat/v1", {
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "JobScout/1.0"
+      }
+    });
+
+    if (!response.ok) {
+      console.error(`[Scout] Vantaa API error: ${response.status}`);
+      return jobs;
+    }
+
+    const data = await response.json();
+
+    // API palauttaa arrayn tai objektin jossa on features/items
+    const listings = Array.isArray(data) ? data : (data.features || data.items || data.jobs || []);
+
+    console.log(`[Scout] Vantaa API returned ${listings.length} jobs`);
+
+    for (const listing of listings) {
+      // Vantaan API:n kenttänimet voivat vaihdella
+      const props = listing.properties || listing;
+
+      const job: InsertJob = {
+        externalId: `vantaa-${props.id || props.ID || hashString(props.otsikko || props.title || "")}`,
+        source: "vantaa",
+        title: props.otsikko || props.title || props.nimike || "Avoin työpaikka",
+        company: "Vantaan kaupunki",
+        description: props.kuvaus || props.description || props.tehtavankuvaus || "",
+        location: props.sijainti || props.toimipaikka || "Vantaa",
+        employmentType: parseVantaaEmploymentType(props.tyosuhde || props.tyosuhteen_tyyppi),
+        remoteType: "on-site",
+        industry: "Julkinen sektori",
+        postedAt: props.julkaistu ? new Date(props.julkaistu) : new Date(),
+        expiresAt: props.hakuaika_paattyy ? new Date(props.hakuaika_paattyy) : undefined,
+        url: props.linkki || props.url || `https://www.vantaa.fi/fi/tyopaikat`,
+      };
+
+      jobs.push(job);
+    }
+
+    console.log(`[Scout] Processed ${jobs.length} jobs from Vantaa API`);
+
+  } catch (error) {
+    console.error("[Scout] Vantaa API fetch error:", error);
+  }
+
+  return jobs;
+}
+
+function parseVantaaEmploymentType(tyosuhde?: string): string {
+  if (!tyosuhde) return "full-time";
+  const lower = tyosuhde.toLowerCase();
+  if (lower.includes("osa-aika") || lower.includes("part")) return "part-time";
+  if (lower.includes("määräaika") || lower.includes("temporary")) return "contract";
+  if (lower.includes("sijainen") || lower.includes("substitute")) return "contract";
+  return "full-time";
 }

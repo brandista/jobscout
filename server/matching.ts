@@ -5,6 +5,22 @@ import type { Profile, Job } from "../drizzle/schema";
  * Palauttaa scoring-tulokset eri kategorioissa
  */
 
+/**
+ * Safe JSON parse for arrays - returns empty array on error with optional logging
+ */
+function safeParseArray(jsonString: string | null | undefined, fieldName?: string): string[] {
+  if (!jsonString) return [];
+  try {
+    const parsed = JSON.parse(jsonString);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    if (fieldName) {
+      console.warn(`[Matching] Failed to parse ${fieldName} JSON:`, jsonString.substring(0, 100));
+    }
+    return [];
+  }
+}
+
 export interface MatchScores {
   totalScore: number;
   skillScore: number;
@@ -67,14 +83,10 @@ function calculateTitleMatch(profile: Profile, job: Job): number {
   const jobTitle = (job.title || "").toLowerCase();
   
   // Tarkista preferredJobTitles/desiredTitles
-  let preferredTitles: string[] = [];
-  try {
-    if ((profile as any).desiredTitles) {
-      preferredTitles = JSON.parse((profile as any).desiredTitles);
-    } else if ((profile as any).preferredJobTitles) {
-      preferredTitles = JSON.parse((profile as any).preferredJobTitles);
-    }
-  } catch {}
+  let preferredTitles: string[] = safeParseArray(
+    (profile as any).desiredTitles || (profile as any).preferredJobTitles,
+    'preferredJobTitles'
+  );
 
   // Myös currentTitle voi olla relevantti
   if (profile.currentTitle) {
@@ -137,20 +149,10 @@ function calculateTitleMatch(profile: Profile, job: Job): number {
  * Taidot-matchaus (25%)
  */
 function calculateSkillMatch(profile: Profile, job: Job): number {
-  let userSkills: string[] = [];
-  try {
-    if (profile.skills) {
-      userSkills = JSON.parse(profile.skills);
-    }
-  } catch {}
+  const userSkills = safeParseArray(profile.skills, 'profile.skills');
 
   // Jos työpaikalla on requiredSkills, käytä niitä
-  let requiredSkills: string[] = [];
-  try {
-    if (job.requiredSkills) {
-      requiredSkills = JSON.parse(job.requiredSkills);
-    }
-  } catch {}
+  let requiredSkills = safeParseArray(job.requiredSkills, 'job.requiredSkills');
 
   // Jos ei requiredSkills, yritä poimia kuvauksesta ja titlistä
   if (requiredSkills.length === 0) {
@@ -237,12 +239,7 @@ function calculateLocationMatch(profile: Profile, job: Job): number {
   if (profile.remotePreference === "on-site" && job.remoteType === "on-site") return 100;
 
   // Maantieteellinen sijainti
-  let preferredLocs: string[] = [];
-  try {
-    if (profile.preferredLocations) {
-      preferredLocs = JSON.parse(profile.preferredLocations);
-    }
-  } catch {}
+  const preferredLocs = safeParseArray(profile.preferredLocations, 'profile.preferredLocations');
 
   if (preferredLocs.length === 0 || !job.location) return 60;
 
@@ -307,12 +304,7 @@ function calculateSalaryMatch(profile: Profile, job: Job): number {
  * Ala-matchaus (5%)
  */
 function calculateIndustryMatch(profile: Profile, job: Job): number {
-  let preferredIndustries: string[] = [];
-  try {
-    if (profile.preferredIndustries) {
-      preferredIndustries = JSON.parse(profile.preferredIndustries);
-    }
-  } catch {}
+  const preferredIndustries = safeParseArray(profile.preferredIndustries, 'profile.preferredIndustries');
 
   if (preferredIndustries.length === 0 || !job.industry) return 60;
 

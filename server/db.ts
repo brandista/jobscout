@@ -11,17 +11,41 @@ import {
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _dbConnectionError: Error | null = null;
 
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
+  if (_db) return _db;
+
+  if (!process.env.DATABASE_URL) {
+    _dbConnectionError = new Error("DATABASE_URL not configured");
+    console.error("[Database] DATABASE_URL environment variable not set");
+    return null;
   }
-  return _db;
+
+  try {
+    _db = drizzle(process.env.DATABASE_URL);
+    _dbConnectionError = null;
+    console.log("[Database] Connected successfully");
+    return _db;
+  } catch (error) {
+    _dbConnectionError = error as Error;
+    console.error("[Database] Failed to connect:", error);
+    _db = null;
+    return null;
+  }
+}
+
+export function getDbConnectionError(): Error | null {
+  return _dbConnectionError;
+}
+
+export async function requireDb() {
+  const db = await getDb();
+  if (!db) {
+    const error = _dbConnectionError || new Error("Database not available");
+    throw error;
+  }
+  return db;
 }
 
 // ============== USER QUERIES ==============

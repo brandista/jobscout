@@ -148,8 +148,10 @@ export async function runAutoScout(): Promise<{
         // Send email if enabled and there are new matches
         if (settings.emailEnabled && newMatches > 0) {
           const emailAddress = settings.emailAddress || user.email;
-          
-          if (emailAddress) {
+
+          // Validate email format before sending
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (emailAddress && emailRegex.test(emailAddress)) {
             const emailSent = await sendJobAlertEmail({
               recipientEmail: emailAddress,
               recipientName: user.name || undefined,
@@ -161,6 +163,8 @@ export async function runAutoScout(): Promise<{
             if (emailSent) {
               results.emailsSent++;
             }
+          } else if (emailAddress) {
+            console.warn(`[AutoScout] Invalid email address for user ${user.id}: ${emailAddress}`);
           }
         }
 
