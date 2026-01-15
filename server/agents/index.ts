@@ -2,6 +2,8 @@
  * JobScout Agent System - Main Orchestrator
  * Handles agent selection, context building, and conversation management
  * Uses Claude (Anthropic) for AI responses
+ *
+ * Integrated with Message Bus for inter-agent communication.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -9,6 +11,14 @@ import type { AgentType, ChatRequest, ChatResponse, Message, UserContext, ToolCa
 import { AGENTS } from "./types";
 import { buildUserContext, formatContextForPrompt } from "./context";
 import { getToolsForAgent, ALL_TOOLS } from "./tools";
+import {
+  createRunContext,
+  registerRun,
+  unregisterRun,
+  SharedKnowledge,
+  AgentMessenger,
+  type RunContext
+} from "./core";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -240,23 +250,38 @@ export async function chat(
 
   // Save user message
   await createMessage({
-    conversationId,
+    conversationId: conversationId!,
     role: "user",
     content: request.message,
   });
 
+  // === CREATE RUN CONTEXT ===
+  // RunContext provides isolated context for this agent interaction
+  const runCtx = createRunContext(userId, conversationId);
+  registerRun(runCtx);
+  runCtx.setCurrentAgent(request.agentType);
+
+  console.log(`[Agent] Started run ${runCtx.runId} for agent ${request.agentType}`);
+
   // Build context
   const userContext = await buildUserContext(userId);
+
+  // Attach runId to context so tools can access it
+  (userContext as any)._runId = runCtx.runId;
+
   const contextPrompt = formatContextForPrompt(userContext);
 
+  // Get shared knowledge context from previous interactions
+  const sharedKnowledgeContext = SharedKnowledge.buildContextSummary(runCtx.runId);
+
   // Get conversation history
-  const history = await getMessagesByConversationId(conversationId, 20);
+  const history = await getMessagesByConversationId(conversationId!, 20);
 
   // Get tools for this agent
   const tools = getToolsForAgent(request.agentType);
   const claudeTools = formatToolsForClaude(tools);
 
-  // Build system prompt
+  // Build system prompt with shared knowledge
   const systemPrompt = `${AGENT_PROMPTS[request.agentType]}
 
 ---
@@ -264,13 +289,19 @@ export async function chat(
 KÄYTTÄJÄN KONTEKSTI:
 ${contextPrompt}
 
+${sharedKnowledgeContext ? `---
+
+JAETTU TIETO (Muilta Agenteilta):
+${sharedKnowledgeContext}
+` : ''}
 ---
 
 OHJEET:
 1. Vastaa aina suomeksi ellei käyttäjä kysy englanniksi
 2. Ole konkreettinen ja toimintaorientoitunut
 3. Viittaa käyttäjän profiiliin ja dataan personoidaksesi vastauksia
-4. Anna aina hyödyllisiä ja käytännöllisiä neuvoja`;
+4. Anna aina hyödyllisiä ja käytännöllisiä neuvoja
+5. Hyödynnä JAETTU TIETO -osiota jos siinä on relevanttia dataa muilta agenteilta`;
 
   // Build messages for Claude
   const messages: Anthropic.MessageParam[] = [];
@@ -330,14 +361,25 @@ OHJEET:
       const tool = tools.find(t => t.name === toolUse.name);
       if (tool) {
         try {
-          const result = await tool.execute(toolUse.input as any, userContext);
-          
+          // Check if result is cached in RunContext
+          const cachedResult = runCtx.getCachedToolResult(toolUse.name, toolUse.input);
+          let result;
+
+          if (cachedResult) {
+            result = cachedResult;
+            console.log(`[Agent] Cache hit for tool ${toolUse.name}`);
+          } else {
+            result = await tool.execute(toolUse.input as any, userContext);
+            // Cache the result in RunContext
+            runCtx.recordToolUse(toolUse.name, toolUse.input, result, false);
+          }
+
           toolCalls.push({
             id: toolUse.id,
             name: toolUse.name,
             arguments: toolUse.input as any,
           });
-          
+
           toolResults.push({
             toolCallId: toolUse.id,
             result,
@@ -395,7 +437,7 @@ OHJEET:
 
   // Save assistant message
   const savedMessage = await createMessage({
-    conversationId,
+    conversationId: conversationId!,
     role: "assistant",
     content: assistantContent,
     toolCalls: toolCalls.length > 0 ? JSON.stringify(toolCalls) : null,
@@ -404,6 +446,17 @@ OHJEET:
 
   // Generate suggested follow-ups
   const suggestedFollowUps = generateFollowUps(request.agentType, request.message);
+
+  // === COMPLETE RUN CONTEXT ===
+  runCtx.completeAgentExecution();
+  const runSummary = runCtx.getSummary();
+  console.log(`[Agent] Completed run ${runCtx.runId}: ${runSummary.toolsUsed.length} tools used, ${runSummary.duration}ms`);
+
+  // Get any discovered signals to include in response
+  const discoveredSignals = runCtx.getDiscoveredSignals();
+
+  // Don't cleanup yet - keep the context for follow-up questions in the same conversation
+  // The context will be cleaned up after conversation timeout or explicit cleanup
 
   return {
     conversationId,
@@ -417,7 +470,14 @@ OHJEET:
       createdAt: new Date(),
     },
     suggestedFollowUps,
-  };
+    // Include run metadata for debugging/analytics
+    _runMetadata: {
+      runId: runCtx.runId,
+      duration: runSummary.duration,
+      toolsUsed: runSummary.toolsUsed,
+      signalsDiscovered: discoveredSignals.length,
+    },
+  } as ChatResponse;
 }
 
 function generateFollowUps(agentType: AgentType, lastMessage: string): string[] {

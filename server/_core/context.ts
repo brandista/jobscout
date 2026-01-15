@@ -1,6 +1,6 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { verifySupabaseToken } from "./supabase";
+import { verifyGoogleToken } from "./google-auth";
 import * as db from "../db";
 
 export type TrpcContext = {
@@ -18,20 +18,20 @@ export async function createContext(
     // Get access token from Authorization header
     const authHeader = opts.req.headers.authorization;
     const accessToken = authHeader?.replace('Bearer ', '');
-    
+
     if (accessToken) {
-      const supabaseUser = await verifySupabaseToken(accessToken);
-      
-      if (supabaseUser) {
+      const googleUser = await verifyGoogleToken(accessToken);
+
+      if (googleUser) {
         // Sync user to database
         await db.upsertUser({
-          openId: supabaseUser.id, // Using Supabase user ID as openId
-          email: supabaseUser.email,
-          name: supabaseUser.name,
+          openId: googleUser.id, // Using Google user ID as openId
+          email: googleUser.email,
+          name: googleUser.name,
           lastSignedIn: new Date(),
         });
-        
-        user = await db.getUserByOpenId(supabaseUser.id);
+
+        user = await db.getUserByOpenId(googleUser.id);
       }
     }
   } catch (error) {

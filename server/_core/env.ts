@@ -7,9 +7,8 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
-  // Supabase
-  supabaseUrl: process.env.SUPABASE_URL ?? "",
-  supabaseServiceKey: process.env.SUPABASE_SERVICE_KEY ?? "",
+  // Google OAuth
+  googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
   // OpenAI
   openaiApiKey: process.env.OPENAI_API_KEY ?? "",
 };

@@ -23,7 +23,7 @@ import {
   ExternalLink,
   RefreshCw
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { toast } from "sonner";
 
 // Event type icons and colors
@@ -75,35 +75,33 @@ function ScoreIndicator({ score, label, size = "md" }: { score: number; label: s
 function CompanyCard({ company, index }: { company: any; index: number }) {
   const [expanded, setExpanded] = useState(false);
 
-  const config = eventTypeConfig[company.events?.[0]?.eventType] || eventTypeConfig.other;
-
   return (
     <Card className="overflow-hidden hover:shadow-lg transition-shadow">
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary font-bold text-lg">
+      <CardHeader className="pb-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary text-primary-foreground font-bold text-xl">
               {index + 1}
             </div>
             <div>
-              <CardTitle className="text-xl">{company.company.name}</CardTitle>
+              <CardTitle className="text-2xl">{company.company.name}</CardTitle>
               {company.company.industry && (
-                <CardDescription>{company.company.industry}</CardDescription>
+                <CardDescription className="text-base">{company.company.industry}</CardDescription>
               )}
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-3xl font-bold text-primary">{company.combinedScore}</div>
-            <div className="text-xs text-muted-foreground">Yhteispisteet</div>
+          <div className="text-right shrink-0">
+            <div className="text-4xl font-bold text-primary">{company.combinedScore}</div>
+            <div className="text-sm text-muted-foreground">Yhteispisteet</div>
           </div>
         </div>
       </CardHeader>
 
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         {/* Score bars */}
-        <div className="grid grid-cols-2 gap-4">
-          <ScoreIndicator score={company.talentNeedScore} label="Rekrytointitarve" size="sm" />
-          <ScoreIndicator score={company.profileMatchScore || 0} label="Profiili-match" size="sm" />
+        <div className="grid grid-cols-2 gap-6">
+          <ScoreIndicator score={company.talentNeedScore} label="Rekrytointitarve" size="md" />
+          <ScoreIndicator score={company.profileMatchScore || 0} label="Profiili-match" size="md" />
         </div>
 
         {/* Recent events */}
@@ -117,29 +115,29 @@ function CompanyCard({ company, index }: { company: any; index: number }) {
               {company.events.slice(0, expanded ? undefined : 2).map((event: any) => {
                 const eventConfig = eventTypeConfig[event.eventType] || eventTypeConfig.other;
                 return (
-                  <div 
-                    key={event.id} 
-                    className="flex items-start gap-2 p-2 rounded-lg bg-accent/50"
+                  <div
+                    key={event.id}
+                    className="p-3 rounded-lg bg-accent/50 space-y-2"
                   >
-                    <Badge variant="secondary" className={`${eventConfig.color} shrink-0`}>
-                      {eventConfig.icon}
-                      <span className="ml-1">{eventConfig.label}</span>
-                    </Badge>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{event.headline}</p>
-                      {event.summary && (
-                        <p className="text-xs text-muted-foreground line-clamp-2">{event.summary}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge variant="secondary" className={`${eventConfig.color} shrink-0`}>
+                        {eventConfig.icon}
+                        <span className="ml-1">{eventConfig.label}</span>
+                      </Badge>
+                      {event.sourceUrl && (
+                        <a
+                          href={event.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 text-muted-foreground hover:text-primary"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
                       )}
                     </div>
-                    {event.sourceUrl && (
-                      <a 
-                        href={event.sourceUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="shrink-0 text-muted-foreground hover:text-primary"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                      </a>
+                    <p className="text-sm font-medium">{event.headline}</p>
+                    {event.summary && (
+                      <p className="text-xs text-muted-foreground line-clamp-3">{event.summary}</p>
                     )}
                   </div>
                 );
@@ -218,6 +216,7 @@ export default function CompanyScout() {
   const { user, loading: authLoading } = useAuth();
   const { data: profile } = trpc.profile.get.useQuery(undefined, { enabled: !!user });
   const { data: stats } = trpc.stats.get.useQuery(undefined, { enabled: !!user });
+  const resultsRef = useRef<HTMLDivElement>(null);
   const { 
     data: topCompanies, 
     isLoading: companiesLoading,
@@ -241,7 +240,12 @@ export default function CompanyScout() {
       toast.success(
         `Skannaus valmis! ${result.newsFetched} uutista, ${result.eventsCreated} tapahtumaa, ${result.scoresCalculated} pisteytettyä yritystä.`
       );
-      refetchCompanies();
+      await refetchCompanies();
+
+      // Scroll to results after scan completes
+      setTimeout(() => {
+        resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
     } catch (error) {
       toast.error("Skannaus epäonnistui");
       console.error(error);
@@ -277,48 +281,58 @@ export default function CompanyScout() {
       </div>
 
       {/* Stats & Action */}
-      <div className="grid md:grid-cols-4 gap-4 mb-6">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{stats?.companies || 0}</div>
-            <p className="text-sm text-muted-foreground">Yrityksiä</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{stats?.events || 0}</div>
-            <p className="text-sm text-muted-foreground">Tapahtumia</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{stats?.jobs || 0}</div>
-            <p className="text-sm text-muted-foreground">Työpaikkoja</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-primary text-primary-foreground">
-          <CardContent className="pt-6">
+      <Card className="mb-6">
+        <CardContent className="pt-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
+                  <Building2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">{stats?.companies || 0}</div>
+                  <p className="text-xs text-muted-foreground">Yrityksiä</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
+                  <Newspaper className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">{stats?.events || 0}</div>
+                  <p className="text-xs text-muted-foreground">Tapahtumia</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900 flex items-center justify-center">
+                  <Briefcase className="w-5 h-5 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">{stats?.jobs || 0}</div>
+                  <p className="text-xs text-muted-foreground">Työpaikkoja</p>
+                </div>
+              </div>
+            </div>
             <Button
               onClick={handleRunFull}
               disabled={isRunning}
-              variant="secondary"
-              className="w-full"
+              size="lg"
             >
               {isRunning ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                   Skannataan...
                 </>
               ) : (
                 <>
-                  <Play className="w-4 h-4 mr-2" />
+                  <Play className="w-5 h-5 mr-2" />
                   Käynnistä skannaus
                 </>
               )}
             </Button>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Profile notice */}
       {!profile && (
@@ -340,7 +354,7 @@ export default function CompanyScout() {
       )}
 
       {/* Top Companies */}
-      <div className="mb-4">
+      <div ref={resultsRef} className="mb-4">
         <h2 className="text-xl font-semibold flex items-center gap-2">
           <TrendingUp className="w-5 h-5" />
           Top-yritykset rekrytointitarpeen mukaan
@@ -378,7 +392,7 @@ export default function CompanyScout() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid md:grid-cols-2 gap-4">
+        <div className="space-y-4">
           {topCompanies.map((company, index) => (
             <CompanyCard key={company.company.id} company={company} index={index} />
           ))}

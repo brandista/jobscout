@@ -11,7 +11,7 @@ import { trpc } from "@/lib/trpc";
 import { Loader2, Play, History, TrendingUp, CheckCircle2, AlertCircle, Globe, Bell, Mail, Zap } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 
 const AVAILABLE_SOURCES = [
   { id: "google", name: "Google Jobs + Suomalaiset", description: "Duunitori, Oikotie, Monster, TE-palvelut, Kuntarekry, LinkedIn, Indeed" },
@@ -21,6 +21,7 @@ const AVAILABLE_SOURCES = [
 
 export default function Scout() {
   const { user, loading: authLoading } = useAuth();
+  const [, navigate] = useLocation();
   const { data: profile } = trpc.profile.get.useQuery(undefined, { enabled: !!user });
   const { data: history, refetch: refetchHistory } = trpc.scout.history.useQuery(
     { limit: 10 },
@@ -109,6 +110,9 @@ export default function Scout() {
         `Scoutaus valmis! Löydettiin ${result.totalJobs} työpaikkaa, joista ${result.newMatches} uutta matchia.`
       );
       refetchHistory();
+
+      // Navigate to jobs page after successful scout
+      navigate("/jobs");
     } catch (error) {
       toast.error("Scoutaus epäonnistui. Yritä uudelleen.");
       console.error(error);

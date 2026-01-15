@@ -44,15 +44,27 @@ import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
+import { trpc } from "@/lib/trpc";
 
-// Simuloitu notifikaatiolaskuri - korvataan oikealla datalla integraatiossa
+// Hook that fetches real notification count from API
 const useNotificationCount = () => {
-  // TODO: Korvaa tämä oikealla API-kutsulla joka hakee:
-  // - Uudet watchlist-hälytykset
-  // - Uudet työmatchit
-  // - Väinön signaalit
-  // - Unread agent messages
-  return 3; // Placeholder
+  const { user } = useAuth();
+
+  // Fetch matches and watchlist to calculate notification count
+  const { data: matches } = trpc.matches.list.useQuery(
+    { limit: 10 },
+    { enabled: !!user }
+  );
+  const { data: watchlist } = trpc.watchlist.list.useQuery(
+    undefined,
+    { enabled: !!user }
+  );
+
+  // Count: recent matches + active watchlist items with alerts
+  const matchCount = matches?.length || 0;
+  const watchlistAlerts = watchlist?.filter(w => w.alertsEnabled)?.length || 0;
+
+  return matchCount + watchlistAlerts;
 };
 
 const menuItems = [
@@ -137,7 +149,7 @@ export default function DashboardLayout({
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
     return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
   });
-  const { loading, user } = useAuth();
+  const { loading, user, isAuthenticated } = useAuth();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
@@ -147,7 +159,7 @@ export default function DashboardLayout({
     return <DashboardLayoutSkeleton />
   }
 
-  if (!user && !allowGuest) {
+  if (!isAuthenticated && !allowGuest) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
         <div className="flex flex-col items-center gap-8 p-8 max-w-md w-full">

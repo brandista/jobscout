@@ -1,9 +1,12 @@
 /**
  * JobScout Agent System - Tools
  * Tools that agents can use to fetch data and perform actions
+ *
+ * Integrated with AgentMessenger for inter-agent communication.
  */
 
 import type { AgentTool, UserContext } from "../types";
+import { AgentMessenger, SharedKnowledge, type SignalPayload } from "../core";
 
 // Tool: Search jobs based on criteria
 export const searchJobsTool: AgentTool = {
@@ -1225,7 +1228,7 @@ KÄYTÄ TÄTÄ ensisijaisesti!`,
       recommendation = "❌ Ei rekrytointisignaaleja. Yritys ei todennäköisesti rekrytoi lähiaikoina.";
     }
     
-    return {
+    const result = {
       company: companyName,
       timestamp: new Date().toISOString(),
       score,
@@ -1242,11 +1245,71 @@ KÄYTÄ TÄTÄ ensisijaisesti!`,
       },
       note: `Analyysi perustuu ${dataSources.length} datalähteeseen. ${confidence === "high" ? "Korkea" : confidence === "medium" ? "Keskitason" : "Matala"} luotettavuus.`
     };
+
+    // === MESSAGE BUS INTEGRATION ===
+    // Get runId from context metadata (set by orchestrator)
+    const runId = (context as any)._runId || `adhoc_${Date.now()}`;
+
+    // Update SharedKnowledge with company data
+    SharedKnowledge.setCompanyKnowledge(runId, companyName, {
+      name: companyName,
+      businessId: ytjData?.company?.businessId,
+      industry: ytjData?.company?.businessLines?.[0],
+      signalScore: score,
+      signalConfidence: confidence,
+      signalTiming: timing,
+      signals: signals.slice(0, 10),
+      glassdoorRating: glassdoorData?.glassdoorData?.averageRating
+        ? parseFloat(glassdoorData.glassdoorData.averageRating)
+        : undefined,
+      ytjData: ytjData?.company,
+      newsItems: (newsData?.news || []).map((n: any) => ({
+        headline: n.headline,
+        sentiment: n.sentiment,
+        signalType: n.signalType,
+        url: n.url,
+      })),
+      twitterSignals: twitterData?.analysis?.hiringSignals || 0,
+    }, "signal_scout");
+
+    // Publish signal to message bus
+    const signalPayload: SignalPayload = {
+      companyName,
+      score,
+      confidence,
+      signals: signals.slice(0, 5),
+      timing,
+      recommendation,
+    };
+
+    AgentMessenger.publishSignal(runId, signalPayload);
+
+    // If strong signal (score >= 75), add recommendations for other agents
+    if (score >= 75) {
+      SharedKnowledge.addRecommendation(
+        runId,
+        "signal_scout",
+        "interview_prep",
+        `Vahva signaali ${companyName} - valmistaudu haastatteluun!`,
+        8
+      );
+      SharedKnowledge.addRecommendation(
+        runId,
+        "signal_scout",
+        "negotiation",
+        `${companyName} rekrytoi aktiivisesti - neuvotteluasema vahva`,
+        7
+      );
+    }
+
+    console.log(`[SignalScout V2] Published signal for ${companyName}: score=${score}, confidence=${confidence}`);
+
+    return result;
   },
 };
 
 // ============================================================================
-// AGENT COLLABORATION TOOLS - Agenttien yhteistyö
+// AGENT COLLABORATION TOOLS - Agenttien yhteistyö (MESSAGE BUS ENABLED)
 // ============================================================================
 
 // Tool: Request help from Career Coach
@@ -1260,9 +1323,9 @@ Palauttaa Career Coachin analyysin ja suositukset.`,
   parameters: {
     type: "object",
     properties: {
-      question: { 
-        type: "string", 
-        description: "Kysymys tai pyyntö Career Coachille" 
+      question: {
+        type: "string",
+        description: "Kysymys tai pyyntö Career Coachille"
       },
       context: {
         type: "string",
@@ -1271,27 +1334,69 @@ Palauttaa Career Coachin analyysin ja suositukset.`,
     },
     required: ["question"],
   },
-  execute: async (args, context) => {
-    // Simuloidaan Career Coachin vastaus (tulevaisuudessa oikea agenttikutsu)
-    const profile = context?.profile;
-    
-    return {
+  execute: async (args, userContext) => {
+    const profile = userContext?.profile;
+    const runId = (userContext as any)._runId || `adhoc_${Date.now()}`;
+
+    // Publish request to message bus
+    AgentMessenger.publish({
+      type: "request_analysis",
+      sourceAgent: "signal_scout",
+      targetAgent: "career_coach",
+      payload: {
+        requestId: `req_${Date.now()}`,
+        question: args.question,
+        context: args.context,
+        waitForResponse: false, // Async for now
+      },
+      runId,
+      priority: "normal",
+    });
+
+    // Add insight to shared knowledge
+    SharedKnowledge.addUserInsight(runId, {
+      type: "career",
+      content: `Käyttäjä kysyi uraohjausta: "${args.question}"`,
+      sourceAgent: "signal_scout",
+      confidence: 0.8,
+    });
+
+    // Generate response based on profile and shared knowledge
+    const companyKnowledge = SharedKnowledge.getRun(runId)?.companies;
+    const recentCompanies = companyKnowledge ? Array.from(companyKnowledge.values()).slice(0, 3) : [];
+
+    const response = {
       agent: "Career Coach",
       response: `Career Coach analysoi tilanteen:
-      
+
 Käyttäjän profiili: ${profile?.currentTitle || 'Ei määritelty'}
 Kokemus: ${profile?.yearsOfExperience || 'Ei tiedossa'} vuotta
+Taidot: ${profile?.skills?.slice(0, 5).join(', ') || 'Ei määritelty'}
 
 Kysymys: "${args.question}"
 
-Suositus: Perustuen profiiliisi, suosittelen keskittymään vahvuuksiisi ja verkostoitumiseen. 
+${recentCompanies.length > 0 ? `📊 Analysoidut yritykset tässä keskustelussa:
+${recentCompanies.map(c => `- ${c.name}: ${c.signalScore || '?'}% signaali`).join('\n')}` : ''}
+
+Suositus: Perustuen profiiliisi, suosittelen keskittymään vahvuuksiisi ja verkostoitumiseen.
 ${args.context ? `Konteksti "${args.context}" huomioiden, tämä voisi olla hyvä tilaisuus sinulle.` : ''}`,
       actionItems: [
         "Päivitä LinkedIn-profiilisi",
         "Valmistele hissipuhe",
-        "Verkostoidu alan ammattilaisiin"
-      ]
+        "Verkostoidu alan ammattilaisiin",
+        ...(recentCompanies.filter(c => (c.signalScore || 0) >= 70).map(c =>
+          `Hae ${c.name}:lle - vahva signaali (${c.signalScore}%)`
+        ))
+      ],
+      sharedContext: {
+        companiesAnalyzed: recentCompanies.length,
+        strongSignals: recentCompanies.filter(c => (c.signalScore || 0) >= 70).length,
+      }
     };
+
+    console.log(`[Career Coach] Processed request from signal_scout, runId=${runId}`);
+
+    return response;
   },
 };
 
@@ -1306,9 +1411,9 @@ Palauttaa neuvottelustrategian ja palkka-arvion.`,
   parameters: {
     type: "object",
     properties: {
-      companyName: { 
-        type: "string", 
-        description: "Yrityksen nimi" 
+      companyName: {
+        type: "string",
+        description: "Yrityksen nimi"
       },
       roleType: {
         type: "string",
@@ -1321,14 +1426,33 @@ Palauttaa neuvottelustrategian ja palkka-arvion.`,
     },
     required: ["companyName"],
   },
-  execute: async (args, context) => {
-    const signalStrength = args.signalStrength || 50;
-    const profile = context?.profile;
-    
+  execute: async (args, userContext) => {
+    const profile = userContext?.profile;
+    const runId = (userContext as any)._runId || `adhoc_${Date.now()}`;
+
+    // Check SharedKnowledge for company signal data
+    const companyKnowledge = SharedKnowledge.getCompanyKnowledge(runId, args.companyName);
+    const signalStrength = args.signalStrength || companyKnowledge?.signalScore || 50;
+
+    // Publish request to message bus
+    AgentMessenger.publish({
+      type: "request_analysis",
+      sourceAgent: "signal_scout",
+      targetAgent: "negotiator",
+      payload: {
+        requestId: `req_${Date.now()}`,
+        companyName: args.companyName,
+        roleType: args.roleType,
+        signalStrength,
+      },
+      runId,
+      priority: signalStrength >= 70 ? "high" : "normal",
+    });
+
     // Neuvottelustrategia perustuen signaalin vahvuuteen
     let strategy = "";
     let salaryAdvice = "";
-    
+
     if (signalStrength >= 75) {
       strategy = "VAHVA NEUVOTTELUASEMA! Yritys todennäköisesti rekrytoi aktiivisesti - voit neuvotella aggressiivisemmin.";
       salaryAdvice = "Pyydä 10-20% markkinahintaa korkeampaa palkkaa.";
@@ -1339,12 +1463,22 @@ Palauttaa neuvottelustrategian ja palkka-arvion.`,
       strategy = "Varovainen lähestymistapa. Signaalit ovat heikot - keskity osoittamaan arvosi ennen palkkaneuvottelua.";
       salaryAdvice = "Hyväksy aluksi markkinahinta ja neuvottele myöhemmin.";
     }
-    
-    return {
+
+    // Add recommendation to shared knowledge
+    SharedKnowledge.addRecommendation(
+      runId,
+      "negotiator",
+      "salary",
+      `${args.companyName}: ${salaryAdvice}`,
+      signalStrength >= 70 ? 8 : 5
+    );
+
+    const response = {
       agent: "Negotiator",
       company: args.companyName,
       role: args.roleType || "Yleinen",
       signalStrength,
+      signalSource: companyKnowledge ? "SharedKnowledge (Väinön analyysi)" : "Parametri",
       strategy,
       salaryAdvice,
       tips: [
@@ -1352,8 +1486,17 @@ Palauttaa neuvottelustrategian ja palkka-arvion.`,
         "Valmistele konkreettisia esimerkkejä saavutuksistasi",
         "Älä paljasta nykyistä palkkaasi ensimmäisenä",
         signalStrength >= 75 ? "Mainitse muut tarjoukset (jos on)" : "Osoita kiinnostuksesi yritykseen"
-      ]
+      ],
+      companyContext: companyKnowledge ? {
+        signals: companyKnowledge.signals.slice(0, 3),
+        glassdoorRating: companyKnowledge.glassdoorRating,
+        timing: companyKnowledge.signalTiming,
+      } : null
     };
+
+    console.log(`[Negotiator] Processed request for ${args.companyName}, signal=${signalStrength}%`);
+
+    return response;
   },
 };
 
@@ -1368,9 +1511,9 @@ Palauttaa haastatteluvalmistelusuunnitelman.`,
   parameters: {
     type: "object",
     properties: {
-      companyName: { 
-        type: "string", 
-        description: "Yrityksen nimi" 
+      companyName: {
+        type: "string",
+        description: "Yrityksen nimi"
       },
       roleType: {
         type: "string",
@@ -1384,14 +1527,74 @@ Palauttaa haastatteluvalmistelusuunnitelman.`,
     },
     required: ["companyName"],
   },
-  execute: async (args, context) => {
-    const urgency = args.urgency || "medium";
-    
-    return {
+  execute: async (args, userContext) => {
+    const runId = (userContext as any)._runId || `adhoc_${Date.now()}`;
+
+    // Check SharedKnowledge for company data
+    const companyKnowledge = SharedKnowledge.getCompanyKnowledge(runId, args.companyName);
+
+    // Determine urgency from signal strength if not provided
+    let urgency = args.urgency;
+    if (!urgency && companyKnowledge?.signalScore) {
+      if (companyKnowledge.signalScore >= 75) urgency = "high";
+      else if (companyKnowledge.signalScore >= 50) urgency = "medium";
+      else urgency = "low";
+    }
+    urgency = urgency || "medium";
+
+    // Publish request to message bus
+    AgentMessenger.publish({
+      type: "request_analysis",
+      sourceAgent: "signal_scout",
+      targetAgent: "interview_prep",
+      payload: {
+        requestId: `req_${Date.now()}`,
+        companyName: args.companyName,
+        roleType: args.roleType,
+        urgency,
+        signalScore: companyKnowledge?.signalScore,
+      },
+      runId,
+      priority: urgency === "high" ? "high" : "normal",
+    });
+
+    // Build company-specific questions based on shared knowledge
+    const companySpecific = [
+      `Tutki ${args.companyName}:n viimeisimmät uutiset`,
+      `Selvitä ${args.companyName}:n kilpailijat`,
+      `Ymmärrä ${args.companyName}:n liiketoimintamalli`
+    ];
+
+    // Add news-based questions if available
+    if (companyKnowledge?.newsItems && companyKnowledge.newsItems.length > 0) {
+      const recentNews = companyKnowledge.newsItems[0];
+      companySpecific.push(`Valmistaudu keskustelemaan: "${recentNews.headline}"`);
+    }
+
+    // Add Glassdoor-based insight
+    if (companyKnowledge?.glassdoorRating) {
+      if (companyKnowledge.glassdoorRating >= 4.0) {
+        companySpecific.push("Glassdoor arvosana hyvä - mainitse miksi arvostat yrityksen kulttuuria");
+      } else if (companyKnowledge.glassdoorRating < 3.5) {
+        companySpecific.push("Huom: Glassdoor arvosanat alhaiset - valmistaudu kysymyksiin yrityskulttuurista");
+      }
+    }
+
+    // Add recommendation to shared knowledge
+    SharedKnowledge.addRecommendation(
+      runId,
+      "interview_prep",
+      "preparation",
+      `Valmistaudu haastatteluun ${args.companyName} - ${urgency === "high" ? "KIIREELLINEN" : "normaali aikataulu"}`,
+      urgency === "high" ? 9 : 6
+    );
+
+    const response = {
       agent: "Interview Prep",
       company: args.companyName,
       role: args.roleType || "Yleinen",
       urgency,
+      urgencySource: companyKnowledge ? `Perustuu Väinön analyysiin (${companyKnowledge.signalScore}%)` : "Oletus",
       prepPlan: {
         timeline: urgency === "high" ? "1-2 viikkoa" : urgency === "medium" ? "2-4 viikkoa" : "1-2 kuukautta",
         focusAreas: [
@@ -1400,11 +1603,7 @@ Palauttaa haastatteluvalmistelusuunnitelman.`,
           "Tutki yrityksen tuotteet/palvelut",
           "Harjoittele yleisiä haastattelukysymyksiä"
         ],
-        companySpecific: [
-          `Tutki ${args.companyName}:n viimeisimmät uutiset`,
-          `Selvitä ${args.companyName}:n kilpailijat`,
-          `Ymmärrä ${args.companyName}:n liiketoimintamalli`
-        ],
+        companySpecific,
         questions: [
           "Kerro itsestäsi ja miksi haet tätä roolia?",
           `Miksi haluat työskennellä ${args.companyName}:ssa?`,
@@ -1412,10 +1611,20 @@ Palauttaa haastatteluvalmistelusuunnitelman.`,
           "Missä näet itsesi 5 vuoden päästä?"
         ]
       },
-      tip: urgency === "high" 
-        ? "🔥 Aloita valmistautuminen NYT - haastattelukutsu voi tulla pian!" 
+      companyContext: companyKnowledge ? {
+        signalScore: companyKnowledge.signalScore,
+        timing: companyKnowledge.signalTiming,
+        signals: companyKnowledge.signals.slice(0, 3),
+        glassdoorRating: companyKnowledge.glassdoorRating,
+      } : null,
+      tip: urgency === "high"
+        ? "🔥 Aloita valmistautuminen NYT - haastattelukutsu voi tulla pian!"
         : "Hyvä ajankohta aloittaa perusteellinen valmistautuminen."
     };
+
+    console.log(`[Interview Prep] Processed request for ${args.companyName}, urgency=${urgency}`);
+
+    return response;
   },
 };
 
