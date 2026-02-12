@@ -257,6 +257,43 @@ export async function enrichCompanyWithPrhData(yTunnus: string): Promise<PrhComp
   }
 }
 
+// Register codes: 1=kaupparekisteri, 4=ennakkoperintä, 5=työnantajarekisteri, 6=ALV, 7=vakuutusmaksuvero
+// Entry type 1=rekisterissä, 0=rekisteröimätön, 55=rekisterissä (työnantaja), 80/82/83=ALV-velvollinen, 41=vakuutusmaksu
+function parseRegisters(entries?: PrhCompanyV3['registeredEntries']): {
+  tradeRegister: boolean;
+  taxPrepayment: boolean;
+  employerRegister: boolean;
+  vatLiable: boolean;
+} {
+  if (!entries) return { tradeRegister: false, taxPrepayment: false, employerRegister: false, vatLiable: false };
+
+  const isActive = (register: string) =>
+    entries.some(e => e.register === register && !e.endDate && e.type !== 0);
+
+  return {
+    tradeRegister: isActive('1'),
+    taxPrepayment: isActive('4'),
+    employerRegister: isActive('5'),
+    vatLiable: entries.some(e => e.register === '6' && !e.endDate),
+  };
+}
+
+function parseAddress(addresses?: PrhCompanyV3['addresses']): {
+  street?: string;
+  postCode?: string;
+  city?: string;
+} | undefined {
+  if (!addresses || addresses.length === 0) return undefined;
+  // type 1 = käyntiosoite (visiting address)
+  const addr = addresses.find(a => a.type === 1) ?? addresses[0];
+  const city = addr.postOffices?.find(po => po.languageCode === '1')?.city
+    ?? addr.postOffices?.[0]?.city;
+  const street = addr.street && addr.buildingNumber
+    ? `${addr.street} ${addr.buildingNumber}`
+    : addr.street || undefined;
+  return { street, postCode: addr.postCode, city };
+}
+
 /**
  * Search and enrich multiple companies by name
  */
@@ -264,12 +301,15 @@ export async function searchAndEnrichCompanies(searchTerm: string): Promise<Arra
   yTunnus: string;
   name: string;
   industry?: string;
+  industryCode?: string;
   companyForm?: string;
   liquidation: boolean;
   registrationDate?: string;
   website?: string;
-  city?: string;
-  status?: string;
+  address?: { street?: string; postCode?: string; city?: string };
+  registers: { tradeRegister: boolean; taxPrepayment: boolean; employerRegister: boolean; vatLiable: boolean };
+  active: boolean;
+  endDate?: string | null;
 }>> {
   try {
     const results = await searchByCompanyName(searchTerm, 20);
@@ -277,21 +317,19 @@ export async function searchAndEnrichCompanies(searchTerm: string): Promise<Arra
     return results.map(r => {
       const parsed = parsePrhResult(r);
 
-      // Get city from first address
-      const city = r.addresses?.[0]?.postOffices?.find(
-        po => po.languageCode === '1'
-      )?.city ?? r.addresses?.[0]?.postOffices?.[0]?.city;
-
       return {
         yTunnus: r.businessId.value,
         name: getActiveName(r.names),
         industry: parsed.businessLine,
+        industryCode: r.mainBusinessLine?.type?.toString(),
         companyForm: parsed.companyForm,
         liquidation: parsed.liquidation,
         registrationDate: r.registrationDate,
         website: r.website?.url,
-        city,
-        status: r.status,
+        address: parseAddress(r.addresses),
+        registers: parseRegisters(r.registeredEntries),
+        active: !r.endDate && r.status === '2',
+        endDate: r.endDate,
       };
     });
   } catch (error) {

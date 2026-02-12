@@ -6,10 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
-import { 
-  Loader2, Search, Building2, AlertTriangle, CheckCircle2, 
+import {
+  Loader2, Search, Building2, AlertTriangle, CheckCircle2,
   Calendar, Globe, Users, TrendingUp, Plus, FileText,
-  ExternalLink, Clock
+  ExternalLink, Clock, MapPin, XCircle, ShieldCheck
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -182,12 +182,24 @@ export default function PrhSearch() {
             
             <div className="grid gap-4">
               {nameResults.map((company) => (
-                <Card key={company.yTunnus} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-4">
+                <Card key={company.yTunnus} className={`hover:shadow-md transition-shadow ${!company.active ? 'opacity-60' : ''}`}>
+                  <CardContent className="p-4 space-y-3">
+                    {/* Row 1: Name + status badges + action */}
                     <div className="flex items-start justify-between">
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-semibold">{company.name}</h3>
+                          {company.active ? (
+                            <Badge variant="default" className="bg-green-600 text-xs">
+                              <CheckCircle2 className="w-3 h-3 mr-1" />
+                              Aktiivinen
+                            </Badge>
+                          ) : (
+                            <Badge variant="destructive" className="text-xs">
+                              <XCircle className="w-3 h-3 mr-1" />
+                              Lopetettu
+                            </Badge>
+                          )}
                           {company.liquidation && (
                             <Badge variant="destructive" className="text-xs">
                               <AlertTriangle className="w-3 h-3 mr-1" />
@@ -196,9 +208,10 @@ export default function PrhSearch() {
                           )}
                         </div>
 
-                        <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
+                        {/* Row 2: Y-tunnus, form, date, city */}
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">
-                            <FileText className="w-4 h-4" />
+                            <FileText className="w-3.5 h-3.5" />
                             {company.yTunnus}
                           </span>
                           {company.companyForm && (
@@ -210,27 +223,11 @@ export default function PrhSearch() {
                               {new Date(company.registrationDate).toLocaleDateString('fi-FI')}
                             </span>
                           )}
-                          {company.city && (
-                            <span>📍 {company.city}</span>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          {company.industry && (
-                            <Badge variant="secondary" className="text-xs">
-                              {company.industry}
-                            </Badge>
-                          )}
-                          {company.website && (
-                            <a
-                              href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-primary hover:underline flex items-center gap-1"
-                            >
-                              <Globe className="w-3 h-3" />
-                              {company.website}
-                            </a>
+                          {company.address?.city && (
+                            <span className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />
+                              {company.address.city}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -250,6 +247,56 @@ export default function PrhSearch() {
                         )}
                       </Button>
                     </div>
+
+                    {/* Row 3: Address */}
+                    {company.address?.street && (
+                      <div className="text-sm text-muted-foreground">
+                        {company.address.street}, {company.address.postCode} {company.address.city}
+                      </div>
+                    )}
+
+                    {/* Row 4: Industry + website */}
+                    <div className="flex flex-wrap gap-2 items-center">
+                      {company.industry && (
+                        <Badge variant="secondary" className="text-xs">
+                          {company.industryCode && <span className="opacity-60 mr-1">{company.industryCode}</span>}
+                          {company.industry}
+                        </Badge>
+                      )}
+                      {company.website && (
+                        <a
+                          href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-primary hover:underline flex items-center gap-1"
+                        >
+                          <Globe className="w-3 h-3" />
+                          {company.website}
+                        </a>
+                      )}
+                    </div>
+
+                    {/* Row 5: Register status chips */}
+                    {company.registers && (
+                      <div className="flex flex-wrap gap-1.5">
+                        <Badge variant={company.registers.tradeRegister ? "outline" : "destructive"} className="text-xs">
+                          {company.registers.tradeRegister ? <ShieldCheck className="w-3 h-3 mr-1" /> : <XCircle className="w-3 h-3 mr-1" />}
+                          Kaupparekisteri
+                        </Badge>
+                        <Badge variant={company.registers.taxPrepayment ? "outline" : "secondary"} className="text-xs">
+                          {company.registers.taxPrepayment ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <XCircle className="w-3 h-3 mr-1 opacity-40" />}
+                          Ennakkoperintä
+                        </Badge>
+                        <Badge variant={company.registers.employerRegister ? "outline" : "secondary"} className="text-xs">
+                          {company.registers.employerRegister ? <Users className="w-3 h-3 mr-1" /> : <XCircle className="w-3 h-3 mr-1 opacity-40" />}
+                          Työnantajarek.
+                        </Badge>
+                        <Badge variant={company.registers.vatLiable ? "outline" : "secondary"} className="text-xs">
+                          {company.registers.vatLiable ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <XCircle className="w-3 h-3 mr-1 opacity-40" />}
+                          ALV
+                        </Badge>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))}
