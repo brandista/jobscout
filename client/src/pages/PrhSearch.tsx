@@ -195,7 +195,7 @@ export default function PrhSearch() {
                             </Badge>
                           )}
                         </div>
-                        
+
                         <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <FileText className="w-4 h-4" />
@@ -204,10 +204,33 @@ export default function PrhSearch() {
                           {company.companyForm && (
                             <span>• {company.companyForm}</span>
                           )}
+                          {company.registrationDate && (
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              {new Date(company.registrationDate).toLocaleDateString('fi-FI')}
+                            </span>
+                          )}
+                          {company.city && (
+                            <span>📍 {company.city}</span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
                           {company.industry && (
                             <Badge variant="secondary" className="text-xs">
                               {company.industry}
                             </Badge>
+                          )}
+                          {company.website && (
+                            <a
+                              href={company.website.startsWith('http') ? company.website : `https://${company.website}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-primary hover:underline flex items-center gap-1"
+                            >
+                              <Globe className="w-3 h-3" />
+                              {company.website}
+                            </a>
                           )}
                         </div>
                       </div>

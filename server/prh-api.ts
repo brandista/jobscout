@@ -79,7 +79,11 @@ interface PrhCompanyV3 {
     registrationDate: string;
     source: string;
   }>;
-  website?: string;
+  website?: {
+    url: string;
+    registrationDate: string;
+    source: string;
+  };
   tradeRegisterStatus?: string;
   status?: string;
   registrationDate: string;
@@ -187,8 +191,8 @@ export function parsePrhResult(result: PrhCompanyV3): PrhCompanyData {
   const businessLineDesc = getFiDesc(result.mainBusinessLine?.descriptions);
   const businessLineCode = result.mainBusinessLine?.type?.toString();
 
-  // Get website directly from result
-  const website = result.website || undefined;
+  // Get website URL from result object
+  const website = result.website?.url || undefined;
 
   // Check for liquidation via companySituations
   const hasLiquidation = result.companySituations?.some(
@@ -262,18 +266,32 @@ export async function searchAndEnrichCompanies(searchTerm: string): Promise<Arra
   industry?: string;
   companyForm?: string;
   liquidation: boolean;
+  registrationDate?: string;
+  website?: string;
+  city?: string;
+  status?: string;
 }>> {
   try {
     const results = await searchByCompanyName(searchTerm, 20);
 
     return results.map(r => {
       const parsed = parsePrhResult(r);
+
+      // Get city from first address
+      const city = r.addresses?.[0]?.postOffices?.find(
+        po => po.languageCode === '1'
+      )?.city ?? r.addresses?.[0]?.postOffices?.[0]?.city;
+
       return {
         yTunnus: r.businessId.value,
         name: getActiveName(r.names),
         industry: parsed.businessLine,
         companyForm: parsed.companyForm,
-        liquidation: parsed.liquidation
+        liquidation: parsed.liquidation,
+        registrationDate: r.registrationDate,
+        website: r.website?.url,
+        city,
+        status: r.status,
       };
     });
   } catch (error) {
