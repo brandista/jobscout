@@ -1,121 +1,125 @@
 /**
  * PRH (Finnish Patent and Registration Office) API Integration
- * 
- * Free API endpoints:
- * - https://avoindata.prh.fi/bis/v1 - Company basic data
- * - https://avoindata.prh.fi/tr/v1 - Trade register
- * 
+ *
+ * API v3 endpoint (YTJ Open Data):
+ * - https://avoindata.prh.fi/opendata-ytj-api/v3/companies
+ *
  * Documentation: https://avoindata.prh.fi/ytj.html
  */
 
 import { PrhCompanyData, savePrhData, getCompanyByName, createCompany, updateCompanyById } from "./db";
 
-const PRH_BIS_BASE_URL = "https://avoindata.prh.fi/bis/v1";
+const PRH_API_BASE_URL = "https://avoindata.prh.fi/opendata-ytj-api/v3";
 
-interface PrhBisResult {
-  businessId: string;
-  name: string;
-  registrationDate: string;
-  companyForm: string;
-  detailsUri: string;
-  liquidations?: Array<{
-    version: number;
-    registrationDate: string;
-    endDate: string | null;
-    language: string;
-    type: string;
-    source: number;
-  }>;
-  names?: Array<{
-    order: number;
-    version: number;
-    name: string;
-    registrationDate: string;
-    endDate: string | null;
-    source: number;
-  }>;
-  auxiliaryNames?: Array<any>;
-  addresses?: Array<{
-    careOf: string | null;
-    street: string | null;
-    postCode: string | null;
-    city: string | null;
-    language: string;
-    type: number;
-    version: number;
-    registrationDate: string;
-    endDate: string | null;
-    country: string | null;
-    source: number;
-  }>;
-  companyForms?: Array<{
-    version: number;
-    name: string;
-    language: string;
-    type: string;
-    registrationDate: string;
-    endDate: string | null;
-    source: number;
-  }>;
-  businessLines?: Array<{
-    order: number;
-    version: number;
-    code: string;
-    name: string;
-    language: string;
-    registrationDate: string;
-    endDate: string | null;
-    source: number;
-  }>;
-  languages?: Array<any>;
-  registeredOffices?: Array<{
-    order: number;
-    version: number;
-    name: string;
-    language: string;
-    registrationDate: string;
-    endDate: string | null;
-    source: number;
-  }>;
-  contactDetails?: Array<{
-    version: number;
-    value: string;
-    type: string;
-    registrationDate: string;
-    endDate: string | null;
-    language: string;
-    source: number;
-  }>;
-  registeredEntries?: Array<any>;
-  businessIdChanges?: Array<any>;
+// --- v3 API types ---
+
+interface PrhMultilangDesc {
+  languageCode: string;
+  description: string;
 }
 
-interface PrhSearchResponse {
-  type: string;
-  version: string;
+interface PrhCompanyV3 {
+  businessId: {
+    value: string;
+    registrationDate: string;
+    source: string;
+  };
+  euId?: {
+    value: string;
+    source: string;
+  };
+  names: Array<{
+    name: string;
+    type: string;
+    registrationDate: string;
+    endDate?: string | null;
+    version: number;
+    source: string;
+  }>;
+  mainBusinessLine?: {
+    type: number;
+    descriptions: PrhMultilangDesc[];
+    typeCodeSet: string;
+    registrationDate: string;
+    source: string;
+  };
+  companyForms?: Array<{
+    type: string;
+    descriptions: PrhMultilangDesc[];
+    registrationDate: string;
+    endDate?: string | null;
+    source: string;
+    version: number;
+  }>;
+  companySituations?: Array<{
+    type: string;
+    descriptions: PrhMultilangDesc[];
+    registrationDate: string;
+    endDate?: string | null;
+    source: string;
+  }>;
+  registeredEntries?: Array<{
+    type: number;
+    descriptions: PrhMultilangDesc[];
+    registrationDate: string;
+    endDate?: string | null;
+    register: string;
+    authority: string;
+  }>;
+  addresses?: Array<{
+    type: number;
+    street: string;
+    postCode: string;
+    postOffices?: Array<{
+      city: string;
+      languageCode: string;
+    }>;
+    buildingNumber?: string;
+    co?: string;
+    registrationDate: string;
+    source: string;
+  }>;
+  website?: string;
+  tradeRegisterStatus?: string;
+  status?: string;
+  registrationDate: string;
+  lastModified: string;
+  endDate?: string | null;
+}
+
+interface PrhSearchResponseV3 {
   totalResults: number;
-  resultsFrom: number;
-  previousResultsUri: string | null;
-  nextResultsUri: string | null;
-  exceptionNoticeUri: string | null;
-  results: PrhBisResult[];
+  companies: PrhCompanyV3[];
+}
+
+// Helper: get Finnish description from multilang array
+function getFiDesc(descs?: PrhMultilangDesc[]): string | undefined {
+  if (!descs || descs.length === 0) return undefined;
+  return descs.find(d => d.languageCode === 'fi')?.description
+    ?? descs.find(d => d.languageCode === 'en')?.description
+    ?? descs[0]?.description;
+}
+
+// Helper: get current (active) name from names array
+// type "1" = official trading name, no endDate = currently active
+function getActiveName(names: PrhCompanyV3['names']): string {
+  const active = names.find(n => !n.endDate && n.type === '1');
+  return active?.name ?? names.find(n => !n.endDate)?.name ?? names[0]?.name ?? '';
 }
 
 /**
  * Search companies by Y-tunnus (Business ID)
  */
-export async function searchByYTunnus(yTunnus: string): Promise<PrhBisResult | null> {
+export async function searchByYTunnus(yTunnus: string): Promise<PrhCompanyV3 | null> {
   try {
     // Clean Y-tunnus format (accept both 1234567-8 and 12345678)
     const cleanYTunnus = yTunnus.replace(/[^0-9-]/g, '');
-    
-    const url = `${PRH_BIS_BASE_URL}/${cleanYTunnus}`;
+
+    const url = `${PRH_API_BASE_URL}/companies?businessId=${encodeURIComponent(cleanYTunnus)}&maxResults=1`;
     console.log(`[PRH] Fetching company data for Y-tunnus: ${cleanYTunnus}`);
-    
+
     const response = await fetch(url, {
-      headers: {
-        'Accept': 'application/json'
-      }
+      headers: { 'Accept': 'application/json' }
     });
 
     if (!response.ok) {
@@ -126,13 +130,14 @@ export async function searchByYTunnus(yTunnus: string): Promise<PrhBisResult | n
       throw new Error(`PRH API error: ${response.status} ${response.statusText}`);
     }
 
-    const data = await response.json() as PrhSearchResponse;
-    
-    if (data.results && data.results.length > 0) {
-      console.log(`[PRH] Found company: ${data.results[0].name}`);
-      return data.results[0];
+    const data = await response.json() as PrhSearchResponseV3;
+
+    if (data.companies && data.companies.length > 0) {
+      const company = data.companies[0];
+      console.log(`[PRH] Found company: ${getActiveName(company.names)}`);
+      return company;
     }
-    
+
     return null;
   } catch (error) {
     console.error('[PRH] Error fetching company data:', error);
@@ -143,16 +148,14 @@ export async function searchByYTunnus(yTunnus: string): Promise<PrhBisResult | n
 /**
  * Search companies by name
  */
-export async function searchByCompanyName(name: string, maxResults: number = 10): Promise<PrhBisResult[]> {
+export async function searchByCompanyName(name: string, maxResults: number = 10): Promise<PrhCompanyV3[]> {
   try {
     const encodedName = encodeURIComponent(name);
-    const url = `${PRH_BIS_BASE_URL}?name=${encodedName}&maxResults=${maxResults}`;
+    const url = `${PRH_API_BASE_URL}/companies?name=${encodedName}&maxResults=${maxResults}&totalResults=true`;
     console.log(`[PRH] Searching companies with name: ${name}`);
-    
+
     const response = await fetch(url, {
-      headers: {
-        'Accept': 'application/json'
-      }
+      headers: { 'Accept': 'application/json' }
     });
 
     // 404 means no results found - not an error
@@ -163,13 +166,13 @@ export async function searchByCompanyName(name: string, maxResults: number = 10)
 
     if (!response.ok) {
       console.error(`[PRH] API error: ${response.status} ${response.statusText}`);
-      return []; // Return empty array instead of throwing
+      return [];
     }
 
-    const data = await response.json() as PrhSearchResponse;
+    const data = await response.json() as PrhSearchResponseV3;
     console.log(`[PRH] Found ${data.totalResults} companies matching "${name}"`);
-    
-    return data.results || [];
+
+    return data.companies || [];
   } catch (error) {
     console.error('[PRH] Error searching companies:', error);
     throw error;
@@ -177,28 +180,32 @@ export async function searchByCompanyName(name: string, maxResults: number = 10)
 }
 
 /**
- * Parse PRH result into our data format
+ * Parse PRH v3 result into our data format
  */
-export function parsePrhResult(result: PrhBisResult): PrhCompanyData {
-  // Get active business line (no endDate)
-  const activeBusinessLine = result.businessLines?.find(bl => !bl.endDate && bl.language === 'FI');
-  
-  // Get website from contact details
-  const website = result.contactDetails?.find(cd => cd.type === 'Kotisivun www-osoite' && !cd.endDate)?.value;
-  
-  // Check for liquidation
-  const hasLiquidation = result.liquidations?.some(l => !l.endDate) || false;
-  
-  // Get company form
-  const companyForm = result.companyForms?.find(cf => !cf.endDate && cf.language === 'FI')?.name || result.companyForm;
+export function parsePrhResult(result: PrhCompanyV3): PrhCompanyData {
+  // Get main business line description in Finnish
+  const businessLineDesc = getFiDesc(result.mainBusinessLine?.descriptions);
+  const businessLineCode = result.mainBusinessLine?.type?.toString();
+
+  // Get website directly from result
+  const website = result.website || undefined;
+
+  // Check for liquidation via companySituations
+  const hasLiquidation = result.companySituations?.some(
+    s => s.type === 'LIQUIDATION' && !s.endDate
+  ) || false;
+
+  // Get company form in Finnish
+  const activeForm = result.companyForms?.find(cf => !cf.endDate);
+  const companyForm = getFiDesc(activeForm?.descriptions);
 
   return {
-    yTunnus: result.businessId,
-    companyName: result.name,
+    yTunnus: result.businessId.value,
+    companyName: getActiveName(result.names),
     companyForm,
     registrationDate: result.registrationDate ? new Date(result.registrationDate) : undefined,
-    businessLine: activeBusinessLine?.name,
-    businessLineCode: activeBusinessLine?.code,
+    businessLine: businessLineDesc,
+    businessLineCode,
     liquidation: hasLiquidation,
     website,
     rawData: result
@@ -212,18 +219,17 @@ export function parsePrhResult(result: PrhBisResult): PrhCompanyData {
 export async function enrichCompanyWithPrhData(yTunnus: string): Promise<PrhCompanyData | null> {
   try {
     const prhResult = await searchByYTunnus(yTunnus);
-    
+
     if (!prhResult) {
       return null;
     }
 
     const prhData = parsePrhResult(prhResult);
-    
+
     // Check if company exists in our DB
     let company = await getCompanyByName(prhData.companyName);
-    
+
     if (!company) {
-      // Create new company
       company = await createCompany({
         name: prhData.companyName,
         yTunnus: prhData.yTunnus,
@@ -232,13 +238,11 @@ export async function enrichCompanyWithPrhData(yTunnus: string): Promise<PrhComp
       });
       console.log(`[PRH] Created new company: ${prhData.companyName} (ID: ${company.id})`);
     } else {
-      // Update existing company with Y-tunnus if missing
       if (!company.yTunnus) {
         await updateCompanyById(company.id, { yTunnus: prhData.yTunnus });
       }
     }
 
-    // Save PRH data
     await savePrhData(company.id, prhData);
     console.log(`[PRH] Saved PRH data for company ID: ${company.id}`);
 
@@ -261,12 +265,12 @@ export async function searchAndEnrichCompanies(searchTerm: string): Promise<Arra
 }>> {
   try {
     const results = await searchByCompanyName(searchTerm, 20);
-    
+
     return results.map(r => {
       const parsed = parsePrhResult(r);
       return {
-        yTunnus: r.businessId,
-        name: r.name,
+        yTunnus: r.businessId.value,
+        name: getActiveName(r.names),
         industry: parsed.businessLine,
         companyForm: parsed.companyForm,
         liquidation: parsed.liquidation
@@ -285,8 +289,10 @@ export async function checkCompanyLiquidation(yTunnus: string): Promise<boolean 
   try {
     const result = await searchByYTunnus(yTunnus);
     if (!result) return null;
-    
-    const hasLiquidation = result.liquidations?.some(l => !l.endDate) || false;
+
+    const hasLiquidation = result.companySituations?.some(
+      s => s.type === 'LIQUIDATION' && !s.endDate
+    ) || false;
     return hasLiquidation;
   } catch (error) {
     console.error('[PRH] Error checking liquidation:', error);
@@ -298,14 +304,14 @@ export async function checkCompanyLiquidation(yTunnus: string): Promise<boolean 
  * Signal detection: Find companies with recent registration (potential new players)
  */
 export async function findRecentlyRegisteredCompanies(
-  searchTerm: string, 
+  searchTerm: string,
   withinDays: number = 365
-): Promise<PrhBisResult[]> {
+): Promise<PrhCompanyV3[]> {
   try {
     const results = await searchByCompanyName(searchTerm, 50);
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - withinDays);
-    
+
     return results.filter(r => {
       if (!r.registrationDate) return false;
       const regDate = new Date(r.registrationDate);
