@@ -8,7 +8,7 @@ AI-pohjainen työnhakuassistentti Suomen työmarkkinoille. Multi-agent -arkkiteh
 - **Backend**: Express + tRPC + TypeScript
 - **Tietokanta**: MySQL (Drizzle ORM + raw SQL)
 - **AI**: Anthropic Claude (agenttijärjestelmä) + OpenAI (index.ts/legacy)
-- **Työpaikkahaku**: Serper.dev Search API
+- **Työpaikkahaku**: Serper.dev Search API (ensisijainen) + Adzuna fallback + SerpAPI (vaihtoehtoinen)
 - **Yritysdata**: PRH/YTJ Open Data API v3
 - **Auth**: Google OAuth (jose JWT)
 - **Sähköposti**: Resend
@@ -16,8 +16,9 @@ AI-pohjainen työnhakuassistentti Suomen työmarkkinoille. Multi-agent -arkkiteh
 - **Repo**: https://github.com/brandista/jobscout.git
 
 ## Tuotanto
-- **URL**: (Railway)
+- **Hosting**: Railway (auto-deploy GitHubista)
 - **Port**: 3000 (auto-detect vapaa portti)
+- **Huom**: Tuotanto-URL tarkistettava Railwaysta — ei vielä dokumentoitu
 - **Build**: `vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist`
 - **Start**: `node dist/index.js` (production), `tsx watch server/_core/index.ts` (dev)
 
@@ -95,13 +96,13 @@ AI-pohjainen työnhakuassistentti Suomen työmarkkinoille. Multi-agent -arkkiteh
 
 ## Tärkeät tiedostot
 - `server/_core/index.ts` — Express-serveri, tRPC-middleware, OAuth, Vite
-- `server/routers.ts` — tRPC-reitittimet (~55k riviä, kaikki API-endpointit)
+- `server/routers.ts` — tRPC-reitittimet (~1550 riviä, kaikki API-endpointit)
 - `server/index.ts` — OpenAI-pohjainen chat-orkestoija (legacy)
 - `server/agents/index.ts` — Claude-pohjainen agenttijärjestelmä (uudempi)
 - `server/agents/types.ts` — Agenttityypit ja -konfiguraatiot
 - `server/agents/core/` — AgentMessenger, SharedKnowledge, RunContext
 - `server/agents/tools/index.ts` — Agenttien työkalut
-- `server/scout.ts` — Työpaikkahaku (Serper.dev)
+- `server/scout.ts` — Työpaikkahaku (Serper.dev + Adzuna fallback)
 - `server/matching.ts` — Matchaus-algoritmi
 - `server/prh-api.ts` — PRH/YTJ v3 API
 - `server/db.ts` — Tietokantafunktiot (Drizzle + raw SQL)
@@ -119,9 +120,14 @@ AI-pohjainen työnhakuassistentti Suomen työmarkkinoille. Multi-agent -arkkiteh
 - `GOOGLE_CLIENT_ID` / `VITE_GOOGLE_CLIENT_ID` — Google OAuth
 - `OPENAI_API_KEY` — OpenAI (legacy chat)
 - `ANTHROPIC_API_KEY` — Anthropic Claude (agenttijärjestelmä)
-- `SERPER_API_KEY` — Serper.dev (työpaikkahaku)
+- `SERPER_API_KEY` — Serper.dev (ensisijainen työpaikkahaku)
+- `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` — Adzuna (fallback-työpaikkahaku)
+- `SERPAPI_API_KEY` — SerpAPI (vaihtoehtoinen)
+- `RESEND_API_KEY` / `EMAIL_FROM` — Sähköpostidigesti (Resend)
 - `JWT_SECRET` — Session-tokenin salaus
 - `NODE_ENV` — production / development
+- `PORT` — Serverin portti (oletus 3000)
+- **Huom**: `env.example` on osittain vanhentunut (viittaa Supabaseen ja PostgreSQL:ään). Käytä `.env.example`:a lähtökohtana.
 
 ## Kehityskäytännöt
 - **Dev**: `npm run dev` (tsx watch, port 3000)
@@ -131,8 +137,9 @@ AI-pohjainen työnhakuassistentti Suomen työmarkkinoille. Multi-agent -arkkiteh
 - **DB-migraatiot**: `npm run db:push` (drizzle-kit generate + migrate)
 
 ## Versiohistoria
-- **Versio**: 1.0.0
+- **Viimeisin päivitys**: 2026-02-12 (PRH API v3 migraatio)
 - **Changelog**: `CHANGELOG.md`
+- **Huom**: `package.json` version on `1.0.0` — ei ole päivitetty julkaisujen myötä
 
 ## Käyttäjäpreferenssit
 - Kieli: Suomi
