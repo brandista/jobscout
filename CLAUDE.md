@@ -6,19 +6,20 @@ AI-pohjainen työnhakuassistentti Suomen työmarkkinoille. Multi-agent -arkkiteh
 ## Tekniset tiedot
 - **Frontend**: React 19 + TypeScript + Vite 7 + Tailwind + shadcn/ui + wouter (routing)
 - **Backend**: Express + tRPC + TypeScript
-- **Tietokanta**: MySQL (Drizzle ORM + raw SQL)
-- **AI**: Anthropic Claude (agenttijärjestelmä) + OpenAI (index.ts/legacy)
-- **Työpaikkahaku**: Serper.dev Search API (ensisijainen) + Adzuna fallback + SerpAPI (vaihtoehtoinen)
+- **Tietokanta**: MySQL (Railway internal) + Drizzle ORM + raw SQL
+- **Cache**: Redis (Railway)
+- **AI**: Anthropic Claude (agenttijärjestelmä) + OpenAI (legacy chat)
+- **Työpaikkahaku**: Serper.dev (ensisijainen) + Adzuna (fallback) + SerpAPI (vaihtoehtoinen)
 - **Yritysdata**: PRH/YTJ Open Data API v3
-- **Auth**: Google OAuth (jose JWT)
+- **Auth**: Google OAuth (jose JWT). Supabase-konfiguraatio on edelleen tuotannon env-muuttujissa mutta koodi migroitu Google OAuth:iin.
 - **Sähköposti**: Resend
 - **Deployment**: Railway (auto-deploy GitHubista)
 - **Repo**: https://github.com/brandista/jobscout.git
 
 ## Tuotanto
-- **Hosting**: Railway (auto-deploy GitHubista)
+- **Railway-palvelut**: App + MySQL + Redis
+- **DB**: `mysql://...@mysql.railway.internal:3306/railway`
 - **Port**: 3000 (auto-detect vapaa portti)
-- **Huom**: Tuotanto-URL tarkistettava Railwaysta — ei vielä dokumentoitu
 - **Build**: `vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist`
 - **Start**: `node dist/index.js` (production), `tsx watch server/_core/index.ts` (dev)
 
@@ -115,19 +116,31 @@ AI-pohjainen työnhakuassistentti Suomen työmarkkinoille. Multi-agent -arkkiteh
 - `client/src/pages/` — 16 sivua (Home, Agents, Jobs, Scout, Profile, Watchlist, PrhSearch, ym.)
 - `client/src/components/AIChatBox.tsx` — Chat-komponentti
 
-## Ympäristömuuttujat (.env)
-- `DATABASE_URL` — MySQL connection string
+## Ympäristömuuttujat (Railway tuotanto)
+
+### Pakolliset
+- `DATABASE_URL` — MySQL connection string (Railway internal)
 - `GOOGLE_CLIENT_ID` / `VITE_GOOGLE_CLIENT_ID` — Google OAuth
-- `OPENAI_API_KEY` — OpenAI (legacy chat)
 - `ANTHROPIC_API_KEY` — Anthropic Claude (agenttijärjestelmä)
-- `SERPER_API_KEY` — Serper.dev (ensisijainen työpaikkahaku)
-- `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` — Adzuna (fallback-työpaikkahaku)
+- `OPENAI_API_KEY` — OpenAI (legacy chat)
+
+### Työpaikkahaut
+- `SERPER_API_KEY` — Serper.dev (ensisijainen)
+- `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` — Adzuna (fallback)
 - `SERPAPI_API_KEY` — SerpAPI (vaihtoehtoinen)
-- `RESEND_API_KEY` / `EMAIL_FROM` — Sähköpostidigesti (Resend)
-- `JWT_SECRET` — Session-tokenin salaus
-- `NODE_ENV` — production / development
-- `PORT` — Serverin portti (oletus 3000)
-- **Huom**: `env.example` on osittain vanhentunut (viittaa Supabaseen ja PostgreSQL:ään). Käytä `.env.example`:a lähtökohtana.
+
+### Muut palvelut
+- `RESEND_API_KEY` — Sähköpostidigesti
+- `MYSQL_URL` / `MYSQL_DATABASE` — Railway MySQL (sisäinen)
+
+### Legacy (tuotannossa mutta koodi ei käytä aktiivisesti)
+- `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` — Supabase (migroitu pois, env vielä jäljellä)
+- `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` — Supabase frontend (sama)
+- `OAUTH_SERVER_URL` — Osoittaa Supabase auth:iin (legacy)
+
+### Huomiot
+- `env.example` on vanhentunut (viittaa Supabaseen ja PostgreSQL:ään). `.env.example` on päivitetympi mutta sekin puutteellinen.
+- Supabase-muuttujat voisi poistaa tuotannosta kun varmistettu ettei koodi enää viittaa niihin.
 
 ## Kehityskäytännöt
 - **Dev**: `npm run dev` (tsx watch, port 3000)
