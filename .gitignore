@@ -106,3 +106,6 @@ temp/
 *.sqlite
 *.sqlite3
 .env*
+
+# Git worktrees
+.worktrees/
