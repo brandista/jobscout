@@ -1,7 +1,8 @@
 import { trpc } from "@/lib/trpc";
+import type { ReactNode } from "react";
 import type { MatchPayload, SignalPayload, ProfilePayload } from "../../../../../shared/lib/brief-logic";
 
-function MetaRow({ items }: { items: (string | number | null | undefined | React.ReactNode)[] }) {
+function MetaRow({ items }: { items: (string | number | null | undefined | ReactNode)[] }) {
   const parts = items.filter(v => v !== null && v !== undefined && v !== "");
   return (
     <p className="text-[11px] uppercase tracking-[0.12em] text-slate-400 tabular-nums mt-2 mb-4 flex items-baseline gap-2">
