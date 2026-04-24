@@ -17,8 +17,37 @@ import AuthCallback from "./pages/AuthCallback";
 import Watchlist from "./pages/Watchlist";
 import PrhSearch from "./pages/PrhSearch";
 import Notifications from "./pages/Notifications";
+import { useEditorialFlag } from "@/hooks/useEditorialFlag";
+import { EditorialLayout } from "@/components/chrome/EditorialLayout";
+import BriefPlaceholder from "@/pages/editorial/BriefPlaceholder";
+import JobsPlaceholder from "@/pages/editorial/JobsPlaceholder";
+import CompaniesPlaceholder from "@/pages/editorial/CompaniesPlaceholder";
+import AgentsPlaceholder from "@/pages/editorial/AgentsPlaceholder";
+import ProfilePlaceholder from "@/pages/editorial/ProfilePlaceholder";
+import BulletinsPlaceholder from "@/pages/editorial/BulletinsPlaceholder";
 
 function Router() {
+  const [editorial] = useEditorialFlag();
+
+  if (editorial) {
+    return (
+      <EditorialLayout>
+        <Switch>
+          <Route path="/" component={BriefPlaceholder} />
+          <Route path="/jobs" component={JobsPlaceholder} />
+          <Route path="/jobs/:rest*" component={JobsPlaceholder} />
+          <Route path="/companies" component={CompaniesPlaceholder} />
+          <Route path="/companies/:rest*" component={CompaniesPlaceholder} />
+          <Route path="/agents" component={AgentsPlaceholder} />
+          <Route path="/agents/:rest*" component={AgentsPlaceholder} />
+          <Route path="/profile" component={ProfilePlaceholder} />
+          <Route path="/bulletins" component={BulletinsPlaceholder} />
+          <Route>{() => <BriefPlaceholder />}</Route>
+        </Switch>
+      </EditorialLayout>
+    );
+  }
+
   return (
     <Switch>
       <Route path={"/"} component={Home} />
