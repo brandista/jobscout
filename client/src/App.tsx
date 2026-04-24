@@ -19,7 +19,7 @@ import PrhSearch from "./pages/PrhSearch";
 import Notifications from "./pages/Notifications";
 import { useEditorialFlag } from "@/hooks/useEditorialFlag";
 import { EditorialLayout } from "@/components/chrome/EditorialLayout";
-import BriefPlaceholder from "@/pages/editorial/BriefPlaceholder";
+import { Brief } from "@/pages/editorial/Brief";
 import JobsPlaceholder from "@/pages/editorial/JobsPlaceholder";
 import CompaniesPlaceholder from "@/pages/editorial/CompaniesPlaceholder";
 import AgentsPlaceholder from "@/pages/editorial/AgentsPlaceholder";
@@ -33,7 +33,7 @@ function Router() {
     return (
       <EditorialLayout>
         <Switch>
-          <Route path="/" component={BriefPlaceholder} />
+          <Route path="/" component={Brief} />
           <Route path="/jobs" component={JobsPlaceholder} />
           <Route path="/jobs/:rest*" component={JobsPlaceholder} />
           <Route path="/companies" component={CompaniesPlaceholder} />
@@ -42,7 +42,7 @@ function Router() {
           <Route path="/agents/:rest*" component={AgentsPlaceholder} />
           <Route path="/profile" component={ProfilePlaceholder} />
           <Route path="/bulletins" component={BulletinsPlaceholder} />
-          <Route>{() => <BriefPlaceholder />}</Route>
+          <Route>{() => <Brief />}</Route>
         </Switch>
       </EditorialLayout>
     );
