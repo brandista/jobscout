@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800;900&family=DM+Sans:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -40,6 +41,10 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --font-family-display: var(--font-display);
+  --font-family-body: var(--font-body);
 }
 
 :root {
@@ -76,6 +81,10 @@
   --sidebar-accent-foreground: oklch(0.141 0.005 285.823);
   --sidebar-border: oklch(0.92 0.004 286.32);
   --sidebar-ring: oklch(0.623 0.214 259.815);
+  --font-display: "Sora", system-ui, sans-serif;
+  --font-body: "DM Sans", system-ui, sans-serif;
+  --paper: #FAF7F0;
+  --ink: oklch(0.235 0.015 65);
 }
 
 .dark {
