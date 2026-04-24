@@ -21,6 +21,13 @@ describe("lintAgentNote — signal_scout (Väinö)", () => {
       "Reaktor kasvaa. Päivitä profiilistasi taidot ensin.");
     expect(result.ok).toBe(false);
   });
+
+  it("flags standalone 'Sinä' (Finnish word boundary)", () => {
+    const result = lintAgentNote("signal_scout",
+      "Sinä voisit hakea tähän paikkaan.");
+    expect(result.ok).toBe(false);
+    expect(result.violations[0]).toMatch(/toisen persoonan/);
+  });
 });
 
 describe("lintAgentNote — career_coach (Kaisa)", () => {

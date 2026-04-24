@@ -11,7 +11,7 @@ const RULES: Record<AgentId, Rule[]> = {
   signal_scout: [
     { pattern: /\bsinun\b/i,       message: "signal_scout ei käytä toisen persoonan puhuttelua" },
     { pattern: /\bprofiilistasi\b/i, message: "signal_scout ei käytä toisen persoonan puhuttelua" },
-    { pattern: /\bSinä\b/i,        message: "signal_scout ei käytä toisen persoonan puhuttelua" },
+    { pattern: /(?<![a-zäöåA-ZÄÖÅ])sinä(?![a-zäöåA-ZÄÖÅ])/i, message: "signal_scout ei käytä toisen persoonan puhuttelua" },
   ],
   career_coach: [
     { pattern: /\bSignaali:/i,     message: "career_coach ei käytä kenttäraportteri-jargonia" },
