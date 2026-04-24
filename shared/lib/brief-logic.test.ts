@@ -165,4 +165,42 @@ describe("selectLeadStory", () => {
     };
     expect(computeProfileCompleteness(profile)).toBe(100);
   });
+
+  it("Tier 3: score beats recency (higher score wins even if older)", () => {
+    const input: BriefInput = {
+      matches: [
+        makeMatch({ matchId: 1, totalScore: 70, postedAt: HOURS(65) }), // older, higher score
+        makeMatch({ matchId: 2, totalScore: 60, postedAt: HOURS(40) }), // newer, lower score
+      ],
+      watchlistSignals: [],
+      profileCompleteness: 80,
+      now: NOW,
+    };
+    const result = selectLeadStory(input);
+    expect(result.tier).toBe(3);
+    const payload = result.payload as { matchId: number };
+    expect(payload.matchId).toBe(1); // higher score wins
+  });
+
+  it("Tier 3: null postedAt match is excluded", () => {
+    const input: BriefInput = {
+      matches: [makeMatch({ totalScore: 70, postedAt: null })],
+      watchlistSignals: [],
+      profileCompleteness: 80,
+      now: NOW,
+    };
+    const result = selectLeadStory(input);
+    expect(result.tier).toBeGreaterThanOrEqual(4); // null postedAt excluded from all tiers
+  });
+
+  it("Tier 5 boundary: completeness exactly 70 falls through to Tier 6", () => {
+    const input: BriefInput = {
+      matches: [],
+      watchlistSignals: [],
+      profileCompleteness: 70,
+      now: NOW,
+    };
+    const result = selectLeadStory(input);
+    expect(result.tier).toBe(6); // < 70 is the condition, so 70 → Tier 6
+  });
 });

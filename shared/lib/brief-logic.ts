@@ -81,8 +81,14 @@ export function selectLeadStory(input: BriefInput): LeadStoryResult {
   const tier2 = sortMatches(fresh24.filter(m => m.totalScore >= 80));
   if (tier2.length > 0) return { tier: 2, kind: "match", payload: toMatchPayload(tier2[0]) };
 
-  // Tier 3: highest-scoring within 72h
-  const tier3 = sortMatches(fresh72);
+  // Tier 3: highest-scoring within 72h (score is primary, watchlisted/newer are tiebreakers)
+  const tier3 = [...fresh72].sort((a, b) => {
+    if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+    if (a.isWatchlisted !== b.isWatchlisted) return a.isWatchlisted ? -1 : 1;
+    const aPosted = a.postedAt?.getTime() ?? 0;
+    const bPosted = b.postedAt?.getTime() ?? 0;
+    return bPosted - aPosted;
+  });
   if (tier3.length > 0) return { tier: 3, kind: "match", payload: toMatchPayload(tier3[0]) };
 
   // Tier 4: watchlist signal in last 24h
