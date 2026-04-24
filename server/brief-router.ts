@@ -36,26 +36,32 @@ export const briefRouter = router({
     if ((watchlist as any[]).length > 0) {
       const db = await getDb();
       if (db) {
-        const companyIds = (watchlist as any[]).map((w: any) => w.companyId);
-        const result = await db.execute(sql`
-          SELECT e.companyId, c.name as companyName, e.headline, e.summary,
-                 e.eventType, e.publishedAt, e.impactStrength
-          FROM events e
-          JOIN companies c ON e.companyId = c.id
-          WHERE e.companyId IN (${sql.raw(companyIds.join(","))})
-            AND e.publishedAt > DATE_SUB(NOW(), INTERVAL 24 HOUR)
-          ORDER BY e.impactStrength DESC
-          LIMIT 10
-        `);
-        watchlistSignals = ((result[0] as any[]) || []).map(row => ({
-          companyId: row.companyId,
-          companyName: row.companyName,
-          headline: row.headline,
-          summary: row.summary,
-          eventType: row.eventType,
-          publishedAt: new Date(row.publishedAt),
-          impactStrength: row.impactStrength ?? 0,
-        }));
+        const companyIds = (watchlist as any[])
+          .map((w: any) => parseInt(w.companyId, 10))
+          .filter(n => !isNaN(n) && n > 0);
+        if (companyIds.length === 0) {
+          // watchlistSignals stays []
+        } else {
+          const result = await db.execute(sql`
+            SELECT e.companyId, c.name as companyName, e.headline, e.summary,
+                   e.eventType, e.publishedAt, e.impactStrength
+            FROM events e
+            JOIN companies c ON e.companyId = c.id
+            WHERE e.companyId IN (${sql.raw(companyIds.join(","))})
+              AND e.publishedAt > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+            ORDER BY e.impactStrength DESC
+            LIMIT 10
+          `);
+          watchlistSignals = ((result[0] as any[]) || []).map(row => ({
+            companyId: row.companyId,
+            companyName: row.companyName,
+            headline: row.headline,
+            summary: row.summary,
+            eventType: row.eventType,
+            publishedAt: new Date(row.publishedAt),
+            impactStrength: row.impactStrength ?? 0,
+          }));
+        }
       }
     }
 
@@ -166,24 +172,29 @@ Vastaa pelkkä teksti.`,
 
     const results = await Promise.all(
       configs.map(async (cfg) => {
-        const call = async (extraInstruction = "") => {
-          const msg = await client.messages.create({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 200,
-            messages: [{ role: "user", content: cfg.prompt + (extraInstruction ? "\n\n" + extraInstruction : "") }],
-          });
-          return (msg.content[0] as { type: string; text?: string }).text ?? "";
-        };
+        try {
+          const call = async (extraInstruction = "") => {
+            const msg = await client.messages.create({
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 200,
+              messages: [{ role: "user", content: cfg.prompt + (extraInstruction ? "\n\n" + extraInstruction : "") }],
+            });
+            return (msg.content[0] as { type: string; text?: string }).text ?? "";
+          };
 
-        let text = await call();
-        const lint = lintAgentNote(cfg.agentId, text);
+          let text = await call();
+          const lint = lintAgentNote(cfg.agentId, text);
 
-        if (!lint.ok) {
-          const correction = `Korjaus: ${lint.violations.join("; ")}. Kirjoita uudelleen ilman näitä ongelmia.`;
-          text = await call(correction);
+          if (!lint.ok) {
+            const correction = `Korjaus: ${lint.violations.join("; ")}. Kirjoita uudelleen ilman näitä ongelmia.`;
+            text = await call(correction);
+          }
+
+          return { agentId: cfg.agentId, byline: cfg.byline, note: text };
+        } catch (err) {
+          console.error(`[agentNotes] ${cfg.agentId} failed:`, err);
+          return { agentId: cfg.agentId, byline: cfg.byline, note: "" };
         }
-
-        return { agentId: cfg.agentId, byline: cfg.byline, note: text };
       })
     );
 
@@ -214,22 +225,28 @@ Vastaa pelkkä teksti.`,
     if ((watchlist as any[]).length > 0) {
       const db = await getDb();
       if (db) {
-        const companyIds = (watchlist as any[]).map((w: any) => w.companyId);
-        const result = await db.execute(sql`
-          SELECT e.headline, c.name as companyName, e.publishedAt, e.eventType
-          FROM events e
-          JOIN companies c ON e.companyId = c.id
-          WHERE e.companyId IN (${sql.raw(companyIds.join(","))})
-            AND e.publishedAt > DATE_SUB(NOW(), INTERVAL 24 HOUR)
-          ORDER BY e.publishedAt DESC
-          LIMIT 6
-        `);
-        recentSignals = ((result[0] as any[]) || []).map(row => ({
-          headline: row.headline,
-          companyName: row.companyName,
-          publishedAt: row.publishedAt,
-          eventType: row.eventType,
-        }));
+        const companyIds = (watchlist as any[])
+          .map((w: any) => parseInt(w.companyId, 10))
+          .filter(n => !isNaN(n) && n > 0);
+        if (companyIds.length === 0) {
+          // recentSignals stays []
+        } else {
+          const result = await db.execute(sql`
+            SELECT e.headline, c.name as companyName, e.publishedAt, e.eventType
+            FROM events e
+            JOIN companies c ON e.companyId = c.id
+            WHERE e.companyId IN (${sql.raw(companyIds.join(","))})
+              AND e.publishedAt > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+            ORDER BY e.publishedAt DESC
+            LIMIT 6
+          `);
+          recentSignals = ((result[0] as any[]) || []).map(row => ({
+            headline: row.headline,
+            companyName: row.companyName,
+            publishedAt: row.publishedAt,
+            eventType: row.eventType,
+          }));
+        }
       }
     }
 
