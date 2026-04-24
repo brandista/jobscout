@@ -175,12 +175,52 @@ Issue number = days since user's account creation (computed client-side).
 
 Left column (8 col):
 
-1. **LEAD STORY** — highest-scoring fresh match (today or yesterday)
+1. **LEAD STORY** — selected by strict priority rules (see §4.1.1 below)
    - Headline (Sora black 56px, leading-[0.95])
    - Meta row: `92% · REAKTOR · HELSINKI · 2 h`
    - Ingress (italic DM Sans 18px slate-500): AI-generated 1-2 sentence summary of why this match is strong
    - Score number displayed as **accent gradient** (the one intentional moment in main column)
    - Action link: "Avaa juttu →"
+
+#### 4.1.1 Lead story selection rules
+
+A deterministic priority function runs every time The Brief renders. First tier that returns a non-empty result wins. Ties broken by the order below within each tier.
+
+**Tier 1 — Breaking match** (always wins if present)
+- New unseen match with score ≥ 90 AND posted within last 24h
+- If multiple: watchlist company > non-watchlist; then newer posting; then higher score
+
+**Tier 2 — Strong fresh match**
+- New unseen match with score ≥ 80 AND posted within last 24h
+- Tiebreakers same as Tier 1
+
+**Tier 3 — Today's highest**
+- Highest-scoring new unseen match posted within last 72h
+- Tiebreaker: watchlist > non-watchlist; then newer posting
+
+**Tier 4 — Breaking watchlist signal** (no good matches — story shifts category)
+- Watchlist company with significant signal in last 24h (hiring burst, funding, leadership change, YTJ change)
+- Lead story becomes a company story, not a match
+- Headline pattern: `<COMPANY> <verb> <noun>` (e.g. "REAKTOR AVASI KUUSI PAIKKAA")
+- Ingress summarizes the signal; score row replaced by signal-type label
+
+**Tier 5 — Profile call-to-action** (quiet day, no Tier 1-4)
+- If `profile.completeness < 70%`: lead story becomes profile-completion prompt
+- Headline: "PROFIILISI VIE 12 MATCHIA SIVUUN" (dynamic count of blocked matches)
+- Ingress: which specific fields unlock the most matches
+
+**Tier 6 — Welcome fallback** (brand-new account, no data yet)
+- Static welcome lead: "TERVETULOA EDITIONIIN"
+- Ingress invites first search
+
+**Never lead with:**
+- A match the user has already opened, saved, archived, or dismissed
+- A match older than 72h (never a stale lead)
+- A watchlist signal the user has acknowledged (click = acknowledged)
+
+**Cooldown:** once a company leads the Brief, it cannot lead again for 48h (prevents single-company domination even if signals keep firing).
+
+**Client/server split:** tiering logic runs server-side in a new tRPC procedure `brief.leadStory.get` returning `{ tier, kind, payload }`. Client renders based on `kind` (`match` | `signal` | `profile_prompt` | `welcome`). Selection is deterministic — same inputs → same output, cacheable per-user for 5 minutes.
 
 2. **MORE HEADLINES** (BriefSectionLabel)
    - 4 more matches (max 4, not 5)
@@ -393,6 +433,66 @@ Viimeisin:      Eilen 16:42
 | Yritystiedustelu | Tutkiva toimittaja | Company research, culture, growth signals |
 | Haastatteluvalmennus | Toimittaja | Interview prep, STAR method, mock interviews |
 | Neuvotteluapu | Taloustoimittaja | Salary data, offer comparison, counter-proposals |
+
+#### 4.4.1 Agent voice constraints
+
+Without hard rules every agent drifts toward the same "AI advisor" voice. Each agent has a fixed persona implemented in its system prompt with explicit allow/forbid lists. Every agent output passes a voice-lint check before it shows up in any UI (Brief, AgentChat, Bulletins).
+
+**Kaisa — Kolumnisti (CV & strategy)**
+- Person: first-person "minä" + second-person "sinä/sinun"
+- Tense: present
+- Tone: direct, advisory, warm but not cheerful
+- Required: refer to user's artifacts by name ("CV:ssäsi", "profiilissasi", "LinkedIn-otsikossasi")
+- Forbidden: market data, hiring signals, company names in analytical context, salary numbers, interview questions
+- Signature move: one concrete change the user can make today
+
+**Väinö — Kenttäreportteri (market signals)**
+- Person: third-person only — never addresses user directly
+- Tense: past tense for events, present for states
+- Tone: dry, factual, dateline-style
+- Required: at least one number, date, or source per note (`"14. huhtikuuta"`, `"kolmen viikon aikana"`, `"PRH-rekisteri"`)
+- Forbidden: advice, "should/pitäisi/kannattaa", emotional language, first/second person
+- Signature move: starts with a verb — *"Avasi"*, *"Ilmoitti"*, *"Muutti"*, *"Rekrytoi"*
+
+**Työpaikka-analyytikko — Kriitikko (match analysis)**
+- Person: third-person about the job ad, second-person about the user's fit
+- Tense: present
+- Tone: sharp, evaluative, comparative — a theater critic reviewing a play
+- Required: a verdict sentence (keep / pass / watch), a stated reason, often a comparison ("toisin kuin Woltin vastaava ilmoitus...")
+- Forbidden: motivational phrases, "you got this / pystyt tähän", generic encouragement
+- Signature move: the verdict comes in the first sentence, justification after
+
+**Yritystiedustelu — Tutkiva toimittaja (company research)**
+- Person: third-person, occasionally "lähteiden mukaan"
+- Tense: past for facts, present for current state
+- Tone: investigative, context-building, longer sentences OK
+- Required: multiple data points connected into one read — ties signals together ("Kun X ja Y tapahtui yhdessä, se viittaa Z:aan")
+- Forbidden: snappy takeaways, bullet-summary style, one-liners under 20 words
+- Signature move: a closing line that hints at what to watch next
+
+**Haastatteluvalmennus — Toimittaja (interview prep)**
+- Person: asks questions more than answers
+- Tense: imperative ("Kerro"), interrogative ("Miten")
+- Tone: probing, pressure-testing
+- Required: at least one question in every response; STAR-structured model answer when giving examples
+- Forbidden: career advice outside interview context, CV rewriting, LinkedIn guidance (that's Kaisa's turf)
+- Signature move: follows up user's answer with a harder version of the same question
+
+**Neuvotteluapu — Taloustoimittaja (salary & offers)**
+- Person: third-person for market, second-person for user's position
+- Tense: present, with data citations
+- Tone: numbers-driven, comparison-heavy
+- Required: a range and a median for every salary discussion; at least one benchmark from market data
+- Forbidden: emotional phrases, "deserve/ansaitset", soft hedging ("ehkä", "voisi ehkä")
+- Signature move: ends with a specific counter-offer number, not a range
+
+**Voice lint (automated check):**
+A lightweight linter runs every agent response before display. Checks:
+- Person/tense conformity (regex-based heuristic)
+- Presence of required elements (Väinö: at least one number/date; Työpaikka-analyytikko: verdict-word; Neuvotteluapu: euro-amount)
+- Forbidden phrase blocklist per agent (e.g., "pystyt tähän" triggers a re-prompt for Kriitikko)
+
+Fails re-prompt the agent once with the lint error appended to the system message. Second fail: show response anyway but log it for prompt tuning.
 
 - Name: Sora black 28px
 - Role label after em dash: tracking-wide uppercase 11px
@@ -609,16 +709,29 @@ If a new page or component is added later and has no existing allocation, the de
 
 ### Phase 3 — sections
 
-In priority order (highest-usage first):
+**Strict sequential order.** Each step must ship, receive user review, and be approved before the next starts. No parallel builds in the first three steps — these set the language and any inconsistency here spreads to the rest.
 
-1. **The Brief** (replaces Home) — biggest visual impact, most frequently viewed
-2. **Jobs** (merges Jobs + SavedJobs + Scout) — core user task
-3. **Companies** (merges Watchlist + CompanyScout + PrhSearch) — signature feature
-4. **Bulletins** (replaces Notifications) — high-frequency view
-5. **Agents** (merges Agents + Agents_mobile) — medium frequency
-6. **Profile** — lower frequency, but editorial treatment is most distinctive
+1. **The Brief** (replaces Home)
+   - Establishes the editorial language, lead story selector, agent-note wiring
+   - All later sections reference patterns introduced here
+   - **Gate:** The Brief runs on real data for the owner's own account for ≥ 3 days before Step 2 begins
 
-Each section ships behind a feature flag / route alias so old and new can coexist during rollout.
+2. **Jobs** (merges Jobs + SavedJobs + Scout)
+   - Validates the list-item primitive at scale
+   - Confirms TabRail interaction, search/filter sidebar, saved-search pattern
+   - **Gate:** Jobs handles ≥ 50 real results per tab without layout break; approved before Step 3
+
+3. **Companies** (merges Watchlist + CompanyScout + PrhSearch)
+   - Introduces the dossier primitive, the conditional Talent Score gradient, the PRH tool page
+   - **Gate:** Companies works end-to-end on the full watchlist + a PRH search with ≥ 20 results; approved before Step 4
+
+Once the first three are shipped and stable, the remaining three can be built in **any order or in parallel** — they are smaller and inherit all patterns from Steps 1–3:
+
+4. Agents (merges Agents + Agents_mobile) — requires agent voice-lint from §4.4.1
+5. Bulletins (replaces Notifications)
+6. Profile
+
+Each section ships behind a feature flag / route alias so old and new can coexist during rollout. Flag name: `editorial_<section>` (e.g., `editorial_brief`, `editorial_jobs`).
 
 ### Phase 4 — utility pages + cleanup
 
@@ -650,7 +763,39 @@ The redesign is complete when:
 
 ---
 
-## 9. Open questions
+## 9. Don't over-magazine it
+
+Editorial language has a failure mode: too much of it. Every list gets an ingress, every section gets a masthead, every byline gets italic — and the whole product starts to read like a design-school project, not a tool. These are the restraint rules.
+
+**Ingress placement — narrow, not everywhere**
+- **Allowed:** Lead story (always), Jobs results in MATCHATUT tab (AI match-reasoning is the whole value), Companies dossiers in LÖYDÄ tab (*"Miksi suositus"* is the whole value)
+- **Forbidden:** Jobs HAUT tab rows, Jobs TALLENNETUT rows, Bulletins items, PRH-HAKU results, Saved searches, Profile work-history entries (headline + meta only; user's own words are the content, not an AI summary)
+- Rule of thumb: ingress exists when AI is *interpreting*. No interpretation → no ingress.
+
+**Italic budget per viewport**
+- At most **two italic elements visible in any single viewport height** (≈ 900px on desktop, ≈ 800px on mobile)
+- Priority order when collisions occur: masthead subtitle > lead ingress > agent mission > byline > meta
+- If a list has italic ingresses, subsequent italic bylines within the same viewport are demoted to regular weight with tracking-wide smallcaps instead
+- Enforced visually during review, not via runtime check
+
+**Masthead discipline**
+- **One masthead per page.** Sub-sections use `BriefSectionLabel` (tracking-wide uppercase + hairline underline) — not a second masthead
+- No dateline rows inside cards, dossiers, or list items. The page has one date; repeating it is newspaper cosplay
+- No "Nº 142" style issue numbers anywhere except the sidebar edition line (one per app instance)
+- LIVE dot reserved for live streams only: The Brief masthead, Bulletins day-headers (today only), topbar LIVE indicator. Forbidden on cards, dossiers, agent cards, profile
+
+**Ornament budget**
+- Gradient moments per §6 — already hard-capped
+- No decorative dividers beyond hairlines — no triple rules, no em-dash rows, no typographic flourishes between sections
+- No drop caps, no pull quotes, no large italic "run-in" letters
+- No "read time" labels, no "by Claude" footnotes, no publication metadata
+
+**When adding anything new**
+- Default is plain: headline + meta + action
+- Ingress, italic, masthead, gradient dot are all earned — each needs a reason
+- If you can't state in one sentence why this element needs the editorial treatment, it doesn't get it
+
+## 10. Open questions
 
 - Should the sidebar auto-collapse on smaller desktop (< 1200px) to a 64px icon rail? Decision: **no icons in nav** is a deliberate editorial choice; collapse would force icons. Keep sidebar at 240px, accept slightly less main-column width on medium screens.
 - Does AgentChat (/agents/:id) keep its existing implementation, or get a full editorial rewrite? **Decision deferred to plan**: likely restyle only, keep underlying logic.
