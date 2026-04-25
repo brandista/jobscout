@@ -77,7 +77,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    // CV Parsing endpoint — uses Anthropic native PDF support (no pdf-parse needed)
+    // CV Parsing endpoint
     parseCV: protectedProcedure
       .input(z.object({
         fileBase64: z.string(),
@@ -85,55 +85,73 @@ export const appRouter = router({
         fileType: z.string(),
       }))
       .mutation(async ({ input }) => {
-        const Anthropic = (await import("@anthropic-ai/sdk")).default;
-        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
         const base64Data = input.fileBase64.includes(',')
           ? input.fileBase64.split(',')[1]
           : input.fileBase64;
+        const buffer = Buffer.from(base64Data, "base64");
 
-        const EXTRACT_PROMPT = `Extract structured profile data from this CV/resume. Return ONLY valid JSON with these exact fields (use null for missing):
-{
-  "currentTitle": "string or null",
-  "yearsOfExperience": number or null,
-  "skills": ["skill1", "skill2"],
-  "languages": ["language1"],
-  "certifications": ["cert1"],
-  "degree": "string or null",
-  "field": "string or null",
-  "university": "string or null",
-  "graduationYear": number or null,
-  "workHistory": [{"company": "string", "title": "string", "duration": "string", "description": "string"}]
-}`;
-
-        let messageContent: Anthropic.MessageParam["content"];
-
-        if (input.fileType === "application/pdf") {
-          messageContent = [
-            {
-              type: "document",
-              source: { type: "base64", media_type: "application/pdf", data: base64Data },
-            } as any,
-            { type: "text", text: EXTRACT_PROMPT },
-          ];
-        } else {
-          // DOCX: extract text with mammoth first
-          const mammoth = await import("mammoth");
-          const buffer = Buffer.from(base64Data, "base64");
-          const { value: text } = await mammoth.extractRawText({ buffer });
-          messageContent = [{ type: "text", text: `${EXTRACT_PROMPT}\n\nCV text:\n${text.slice(0, 12000)}` }];
+        // Step 1: extract plain text from file
+        let text = "";
+        try {
+          if (input.fileType === "application/pdf") {
+            const pdfParse = (await import("pdf-parse")).default;
+            const parsed = await pdfParse(buffer);
+            text = parsed.text;
+          } else {
+            const mammoth = await import("mammoth");
+            const result = await mammoth.extractRawText({ buffer });
+            text = result.value;
+          }
+        } catch (err) {
+          console.error("[parseCV] text extraction failed:", err);
+          throw new Error(`Text extraction failed: ${(err as Error).message}`);
         }
 
-        const response = await anthropic.messages.create({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 1500,
-          messages: [{ role: "user", content: messageContent }],
-        });
+        if (!text || text.trim().length < 30) {
+          throw new Error("Could not extract text from file — is it a valid PDF or DOCX?");
+        }
+
+        // Step 2: structured extraction with Anthropic
+        const Anthropic = (await import("@anthropic-ai/sdk")).default;
+        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+        const prompt = `Extract structured CV/resume data. Return ONLY valid JSON with these fields (null for missing):
+{
+  "currentTitle": string|null,
+  "yearsOfExperience": number|null,
+  "skills": string[],
+  "languages": string[],
+  "degree": string|null,
+  "field": string|null,
+  "university": string|null,
+  "graduationYear": number|null,
+  "workHistory": [{"company":string,"title":string,"duration":string,"description":string}]
+}
+
+CV text:
+${text.slice(0, 12000)}`;
+
+        let response;
+        try {
+          response = await anthropic.messages.create({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 1500,
+            messages: [{ role: "user", content: prompt }],
+          });
+        } catch (err) {
+          console.error("[parseCV] Anthropic call failed:", err);
+          throw new Error(`AI extraction failed: ${(err as Error).message}`);
+        }
 
         const raw = response.content[0];
-        if (raw.type !== "text") throw new Error("Unexpected response type");
+        if (raw.type !== "text") throw new Error("No text response from AI");
         const cleaned = raw.text.replace(/```json\n?/gi, "").replace(/```\n?/gi, "").trim();
-        return JSON.parse(cleaned);
+        try {
+          return JSON.parse(cleaned);
+        } catch {
+          console.error("[parseCV] JSON parse failed, raw:", cleaned.slice(0, 200));
+          throw new Error("AI returned invalid JSON");
+        }
       }),
 
     // Profile image upload

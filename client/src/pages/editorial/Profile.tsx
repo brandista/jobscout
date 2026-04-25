@@ -326,7 +326,7 @@ function CvUpload({ onParsed }: { onParsed: (data: any) => void }) {
       toast.success("CV parsittu – tarkista tiedot ja tallenna");
       onParsed(data);
     },
-    onError: () => toast.error("CV:n parsinta epäonnistui"),
+    onError: (err) => toast.error(`CV:n parsinta epäonnistui: ${err.message}`),
   });
 
   function submitFile(file: File) {
