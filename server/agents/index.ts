@@ -1,12 +1,12 @@
 /**
  * JobScout Agent System - Main Orchestrator
  * Handles agent selection, context building, and conversation management
- * Uses Claude (Anthropic) for AI responses
+ * Uses OpenAI GPT-4o for AI responses
  *
  * Integrated with Message Bus for inter-agent communication.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import type { AgentType, ChatRequest, ChatResponse, Message, UserContext, ToolCall, ToolResult } from "./types";
 import { AGENTS } from "./types";
 import { buildUserContext, formatContextForPrompt } from "./context";
@@ -20,8 +20,8 @@ import {
   type RunContext
 } from "./core";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 // System prompts for each agent
@@ -631,15 +631,18 @@ KÄYTÄ NÄITÄ AUTOMAATTISESTI kun:
 Olet käyttäjän henkilökohtainen tietäjä - näet mitä muut eivät näe. 🔮`,
 };
 
-// Format tools for Claude
-function formatToolsForClaude(tools: any[]): Anthropic.Tool[] {
+// Format tools for OpenAI
+function formatToolsForOpenAI(tools: any[]): OpenAI.ChatCompletionTool[] {
   return tools.map(tool => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: {
-      type: "object" as const,
-      properties: tool.parameters.properties || {},
-      required: tool.parameters.required || [],
+    type: "function" as const,
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: {
+        type: "object" as const,
+        properties: tool.parameters.properties || {},
+        required: tool.parameters.required || [],
+      },
     },
   }));
 }
@@ -701,7 +704,7 @@ export async function chat(
 
   // Get tools for this agent
   const tools = getToolsForAgent(request.agentType);
-  const claudeTools = formatToolsForClaude(tools);
+  const openaiTools = formatToolsForOpenAI(tools);
 
   // Build system prompt with shared knowledge
   const systemPrompt = `${AGENT_PROMPTS[request.agentType]}
@@ -725,24 +728,22 @@ OHJEET:
 4. Anna aina hyödyllisiä ja käytännöllisiä neuvoja
 5. Hyödynnä JAETTU TIETO -osiota jos siinä on relevanttia dataa muilta agenteilta`;
 
-  // Build messages for Claude
-  const messages: Anthropic.MessageParam[] = [];
+  // Build messages for OpenAI (system message first)
+  const messages: OpenAI.ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
+  ];
 
   // Add conversation history
   for (const msg of history.slice(-10)) {
     if (msg.role === "user" || msg.role === "assistant") {
-      messages.push({
-        role: msg.role,
-        content: msg.content,
-      });
+      messages.push({ role: msg.role, content: msg.content });
     }
   }
 
   // Add current message (with file content if provided)
   let userMessageContent = request.message;
-  
+
   if (request.fileBase64 && request.fileName) {
-    // Parse CV content from base64
     try {
       const { parseCV } = await import("../cv-parser");
       const cvText = await parseCV(request.fileBase64, request.fileName);
@@ -755,107 +756,73 @@ OHJEET:
     }
   }
 
-  messages.push({
-    role: "user",
-    content: userMessageContent,
-  });
+  messages.push({ role: "user", content: userMessageContent });
 
-  // Call Claude
-  let response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+  // Call OpenAI
+  let response = await openai.chat.completions.create({
+    model: "gpt-4o",
     max_tokens: 4096,
-    system: systemPrompt,
     messages,
-    tools: claudeTools.length > 0 ? claudeTools : undefined,
+    tools: openaiTools.length > 0 ? openaiTools : undefined,
   });
 
   let toolCalls: ToolCall[] = [];
   let toolResults: ToolResult[] = [];
 
-  // Handle tool use
-  while (response.stop_reason === "tool_use") {
-    const toolUseBlocks = response.content.filter(
-      (block): block is Anthropic.ToolUseBlock => block.type === "tool_use"
-    );
+  // Handle tool calls
+  while (response.choices[0].finish_reason === "tool_calls") {
+    const responseMessage = response.choices[0].message;
+    const calls = responseMessage.tool_calls ?? [];
 
-    // Process each tool call
-    for (const toolUse of toolUseBlocks) {
-      const tool = tools.find(t => t.name === toolUse.name);
+    // Add assistant message with all tool_calls
+    messages.push({
+      role: "assistant",
+      content: responseMessage.content,
+      tool_calls: responseMessage.tool_calls,
+    });
+
+    // Execute each tool call and add its result
+    for (const toolCall of calls) {
+      const toolName = toolCall.function.name;
+      const toolInput = JSON.parse(toolCall.function.arguments || "{}");
+      const tool = tools.find(t => t.name === toolName);
+      let result: any = { error: "Tool not found" };
+
       if (tool) {
         try {
-          // Check if result is cached in RunContext
-          const cachedResult = runCtx.getCachedToolResult(toolUse.name, toolUse.input);
-          let result;
-
+          const cachedResult = runCtx.getCachedToolResult(toolName, toolInput);
           if (cachedResult) {
             result = cachedResult;
-            console.log(`[Agent] Cache hit for tool ${toolUse.name}`);
+            console.log(`[Agent] Cache hit for tool ${toolName}`);
           } else {
-            result = await tool.execute(toolUse.input as any, userContext);
-            // Cache the result in RunContext
-            runCtx.recordToolUse(toolUse.name, toolUse.input, result, false);
+            result = await tool.execute(toolInput, userContext);
+            runCtx.recordToolUse(toolName, toolInput, result, false);
           }
-
-          toolCalls.push({
-            id: toolUse.id,
-            name: toolUse.name,
-            arguments: toolUse.input as any,
-          });
-
-          toolResults.push({
-            toolCallId: toolUse.id,
-            result,
-          });
-
-          // Add assistant message with tool use
-          messages.push({
-            role: "assistant",
-            content: response.content,
-          });
-
-          // Add tool result
-          messages.push({
-            role: "user",
-            content: [{
-              type: "tool_result",
-              tool_use_id: toolUse.id,
-              content: JSON.stringify(result),
-            }],
-          });
+          toolCalls.push({ id: toolCall.id, name: toolName, arguments: toolInput });
+          toolResults.push({ toolCallId: toolCall.id, result });
         } catch (error) {
-          console.error(`Tool execution error for ${toolUse.name}:`, error);
-          messages.push({
-            role: "assistant",
-            content: response.content,
-          });
-          messages.push({
-            role: "user",
-            content: [{
-              type: "tool_result",
-              tool_use_id: toolUse.id,
-              content: JSON.stringify({ error: "Tool execution failed" }),
-              is_error: true,
-            }],
-          });
+          console.error(`Tool execution error for ${toolName}:`, error);
+          result = { error: "Tool execution failed" };
         }
       }
+
+      messages.push({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: JSON.stringify(result),
+      });
     }
 
     // Get next response
-    response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+    response = await openai.chat.completions.create({
+      model: "gpt-4o",
       max_tokens: 4096,
-      system: systemPrompt,
       messages,
-      tools: claudeTools,
+      tools: openaiTools,
     });
   }
 
-  // Extract text from response
-  const textBlocks = response.content.filter(
-    (block): block is Anthropic.TextBlock => block.type === "text"
-  );
-  const assistantContent = textBlocks.map(b => b.text).join("\n");
+  const assistantContent = response.choices[0].message.content ?? "";
 
   // Save assistant message
   const savedMessage = await createMessage({
