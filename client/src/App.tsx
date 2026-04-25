@@ -8,11 +8,12 @@ import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 import { EditorialLayout } from "@/components/chrome/EditorialLayout";
 import { Brief } from "@/pages/editorial/Brief";
-import JobsPlaceholder from "@/pages/editorial/JobsPlaceholder";
-import CompaniesPlaceholder from "@/pages/editorial/CompaniesPlaceholder";
-import AgentsPlaceholder from "@/pages/editorial/AgentsPlaceholder";
-import ProfilePlaceholder from "@/pages/editorial/ProfilePlaceholder";
-import BulletinsPlaceholder from "@/pages/editorial/BulletinsPlaceholder";
+import Jobs from "@/pages/editorial/Jobs";
+import Companies from "@/pages/editorial/Companies";
+import Agents from "@/pages/editorial/Agents";
+import AgentChat from "@/pages/editorial/AgentChat";
+import Profile from "@/pages/editorial/Profile";
+import Bulletins from "@/pages/editorial/Bulletins";
 
 function Router() {
   return (
@@ -24,14 +25,18 @@ function Router() {
           <EditorialLayout>
             <Switch>
               <Route path="/" component={Brief} />
-              <Route path="/jobs" component={JobsPlaceholder} />
-              <Route path="/jobs/:rest*" component={JobsPlaceholder} />
-              <Route path="/companies" component={CompaniesPlaceholder} />
-              <Route path="/companies/:rest*" component={CompaniesPlaceholder} />
-              <Route path="/agents" component={AgentsPlaceholder} />
-              <Route path="/agents/:rest*" component={AgentsPlaceholder} />
-              <Route path="/profile" component={ProfilePlaceholder} />
-              <Route path="/bulletins" component={BulletinsPlaceholder} />
+              <Route path="/jobs/saved" component={Jobs} />
+              <Route path="/jobs/matches" component={Jobs} />
+              <Route path="/jobs" component={Jobs} />
+              <Route path="/companies/discover" component={Companies} />
+              <Route path="/companies/prh" component={Companies} />
+              <Route path="/companies" component={Companies} />
+              <Route path="/agents/:id" component={AgentChat} />
+              <Route path="/agents" component={Agents} />
+              <Route path="/profile" component={Profile} />
+              <Route path="/bulletins/unread" component={Bulletins} />
+              <Route path="/bulletins/archived" component={Bulletins} />
+              <Route path="/bulletins" component={Bulletins} />
               <Route component={NotFound} />
             </Switch>
           </EditorialLayout>
