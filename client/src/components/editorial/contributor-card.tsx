@@ -33,7 +33,7 @@ export function ContributorCard({
         <div className="min-w-0">
           <h2 className="font-[family-name:var(--font-display)] text-xl md:text-[28px] font-black tracking-tight text-slate-900 leading-tight">
             {name}
-            <span className="ml-2 text-[11px] uppercase tracking-[0.22em] font-bold text-slate-500 whitespace-nowrap">
+            <span className="ml-2 text-[11px] uppercase tracking-[0.22em] font-bold text-slate-500">
               — {role}
             </span>
           </h2>
