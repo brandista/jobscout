@@ -29,16 +29,16 @@ export function ContributorCard({
 }) {
   return (
     <article className="p-6 border border-slate-900/15 bg-white/40 backdrop-blur-sm">
-      <div className="flex items-baseline justify-between gap-4 pb-4 border-b border-slate-900/15">
-        <div>
-          <h2 className="font-[family-name:var(--font-display)] text-2xl md:text-[28px] font-black tracking-tight text-slate-900">
+      <div className="flex items-start justify-between flex-wrap gap-2 pb-4 border-b border-slate-900/15">
+        <div className="min-w-0">
+          <h2 className="font-[family-name:var(--font-display)] text-xl md:text-[28px] font-black tracking-tight text-slate-900 leading-tight">
             {name}
-            <span className="ml-2 text-[11px] uppercase tracking-[0.22em] font-bold text-slate-500">
+            <span className="ml-2 text-[11px] uppercase tracking-[0.22em] font-bold text-slate-500 whitespace-nowrap">
               — {role}
             </span>
           </h2>
         </div>
-        <span className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] font-bold text-slate-900">
+        <span className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] font-bold text-slate-900 flex-shrink-0 mt-0.5">
           <span
             className={`w-1.5 h-1.5 rounded-full ${
               status === "available"

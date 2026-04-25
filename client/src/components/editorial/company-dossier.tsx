@@ -28,7 +28,7 @@ export function CompanyDossier({
   return (
     <article className="py-8 border-b border-slate-900/15">
       <div className="flex items-baseline justify-between gap-4 flex-wrap">
-        <h2 className="font-[family-name:var(--font-display)] text-3xl md:text-[32px] font-black tracking-tight text-slate-900">
+        <h2 className="font-[family-name:var(--font-display)] text-2xl md:text-[32px] font-black tracking-tight text-slate-900 break-words min-w-0">
           {name}
         </h2>
         <span className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] font-bold text-slate-900">

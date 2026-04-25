@@ -28,11 +28,11 @@ export function Masthead({
 }) {
   return (
     <>
-      <div className="flex items-center justify-between pb-3 border-b-[1.5px] border-slate-900">
-        <div className="flex items-baseline gap-5 text-[11px] uppercase tracking-[0.22em] font-bold text-slate-900">
+      <div className="flex items-center justify-between flex-wrap gap-y-1 pb-3 border-b-[1.5px] border-slate-900">
+        <div className="flex items-baseline gap-3 md:gap-5 text-[11px] uppercase tracking-[0.22em] font-bold text-slate-900">
           <span>{dateStr}</span>
           {issueLabel && (
-            <span className="italic font-normal text-slate-500 tracking-[0.18em]">
+            <span className="hidden sm:inline italic font-normal text-slate-500 tracking-[0.18em]">
               {issueLabel}
             </span>
           )}
