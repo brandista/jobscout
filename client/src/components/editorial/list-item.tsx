@@ -23,7 +23,7 @@ export function EditorialListItem({
           : ""
       }`}
     >
-      <h2 className="font-[family-name:var(--font-display)] text-2xl md:text-[28px] font-semibold tracking-tight text-slate-900 leading-tight">
+      <h2 className="font-[family-name:var(--font-display)] text-2xl md:text-[28px] font-semibold tracking-tight text-slate-900 leading-tight break-words">
         {headline}
       </h2>
       <div className="mt-1.5 text-[11px] uppercase tracking-[0.12em] text-slate-400 tabular-nums">
@@ -35,7 +35,7 @@ export function EditorialListItem({
         </p>
       )}
       {actions && (
-        <div className="mt-4 flex items-center gap-5 text-[11px] uppercase tracking-[0.18em] font-bold text-slate-900">
+        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] uppercase tracking-[0.18em] font-bold text-slate-900">
           {actions}
         </div>
       )}

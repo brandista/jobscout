@@ -120,7 +120,7 @@ function WorkHistorySection({
         <div className="space-y-6">
           {entries.map((e, i) => (
             <div key={i} className="space-y-2 pb-4 border-b border-slate-900/15">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <input
                   value={e.title}
                   onChange={(ev) => updateEntry(i, "title", ev.target.value)}
@@ -207,11 +207,11 @@ function EducationSection({
     <InlineEditRow label="KOULUTUS" onEdit={() => setEditing(!editing)}>
       {editing ? (
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input value={form.degree} onChange={(e) => setForm((f) => ({ ...f, degree: e.target.value }))} placeholder="Tutkinto" className="bg-transparent border-b border-slate-900/40 text-sm py-1 outline-none" />
             <input value={form.field} onChange={(e) => setForm((f) => ({ ...f, field: e.target.value }))} placeholder="Ala" className="bg-transparent border-b border-slate-900/40 text-sm py-1 outline-none" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input value={form.university} onChange={(e) => setForm((f) => ({ ...f, university: e.target.value }))} placeholder="Yliopisto / koulu" className="bg-transparent border-b border-slate-900/40 text-sm py-1 outline-none" />
             <input value={form.graduationYear} onChange={(e) => setForm((f) => ({ ...f, graduationYear: e.target.value }))} placeholder="Valmistumisvuosi" className="bg-transparent border-b border-slate-900/40 text-sm py-1 outline-none" />
           </div>
@@ -294,7 +294,7 @@ function PreferencesSection({
     <InlineEditRow label="PREFERENSSIT" onEdit={() => setEditing(!editing)}>
       {editing ? (
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <input value={form.salaryMin} onChange={(e) => setForm((f) => ({ ...f, salaryMin: e.target.value }))} placeholder="Palkka min (€)" className="bg-transparent border-b border-slate-900/40 text-sm py-1 outline-none" />
             <input value={form.salaryMax} onChange={(e) => setForm((f) => ({ ...f, salaryMax: e.target.value }))} placeholder="Palkka max (€)" className="bg-transparent border-b border-slate-900/40 text-sm py-1 outline-none" />
           </div>
