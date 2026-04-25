@@ -320,6 +320,7 @@ function PreferencesSection({
 
 function CvUpload({ onParsed }: { onParsed: (data: any) => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
   const parseCV = trpc.profile.parseCV.useMutation({
     onSuccess: (data) => {
       toast.success("CV parsittu – tarkista tiedot ja tallenna");
@@ -328,14 +329,11 @@ function CvUpload({ onParsed }: { onParsed: (data: any) => void }) {
     onError: () => toast.error("CV:n parsinta epäonnistui"),
   });
 
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function submitFile(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
-      const base64 = (reader.result as string);
       parseCV.mutate({
-        fileBase64: base64,
+        fileBase64: reader.result as string,
         fileName: file.name,
         fileType: file.type,
       });
@@ -343,24 +341,42 @@ function CvUpload({ onParsed }: { onParsed: (data: any) => void }) {
     reader.readAsDataURL(file);
   }
 
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) submitFile(file);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) submitFile(file);
+  }
+
   return (
     <div>
       <BriefSectionLabel>CV-tiedosto</BriefSectionLabel>
       <div
         onClick={() => fileRef.current?.click()}
-        className="border border-dashed border-slate-900/30 p-6 text-center cursor-pointer hover:border-slate-900 transition-colors"
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragEnter={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        className={`border border-dashed p-6 text-center cursor-pointer transition-colors ${
+          dragging ? "border-slate-900 bg-slate-900/[0.04]" : "border-slate-900/30 hover:border-slate-900"
+        }`}
       >
         {parseCV.isPending ? (
           <p className="text-sm italic text-slate-400">Parsitaan CV:tä…</p>
         ) : (
-          <p className="text-sm italic text-slate-500">Raahaa CV tähän – PDF tai DOCX</p>
+          <p className="text-sm italic text-slate-500">Raahaa CV tähän tai klikkaa – PDF tai DOCX</p>
         )}
       </div>
       <input
         ref={fileRef}
         type="file"
         accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        onChange={handleFile}
+        onChange={handleChange}
         className="hidden"
       />
     </div>
