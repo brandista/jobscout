@@ -299,7 +299,7 @@ export default function Jobs() {
         dateStr={formatBriefDate(new Date(), "fi")}
         statusLabel="LIVE"
         title="JOBS"
-        subtitle="Klassifioitu työtarjonta, päivittyy elävänä."
+        subtitle="Avoimet paikat, matchit ja tallennetut."
       />
       <TabRail tabs={TABS} active={activeTab} onSelect={handleTabSelect} />
 

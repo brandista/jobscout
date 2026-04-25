@@ -232,7 +232,7 @@ function PrhTab() {
                   onClick={() => {
                     // We add by y-tunnus after enriching. For now add to watchlist requires companyId.
                     // Show a toast explaining to use Löydä tab instead.
-                    toast.info("Hae yritys ensin Löydä-välilehdeltä lisätäksesi seurantaan");
+                    toast.info("Hae yritys ensin Löydä-välilehdeltä lisätäksesi sen seurantaan");
                   }}
                   className="hover:opacity-70 transition-opacity"
                 >
@@ -319,7 +319,7 @@ export default function Companies() {
         dateStr={formatBriefDate(new Date(), "fi")}
         statusLabel="LIVE"
         title="COMPANIES"
-        subtitle="Yritykset joita seuraat, ja joita et vielä."
+        subtitle="Yritykset, joita seuraat, ja joita et vielä."
       />
       <TabRail tabs={TABS} active={activeTab} onSelect={handleTabSelect} />
 

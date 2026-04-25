@@ -68,7 +68,7 @@ export default function AgentChat() {
       ]);
     },
     onError: () => {
-      toast.error("Viesti epäonnistui — yritä uudelleen");
+      toast.error("Viesti epäonnistui – yritä uudelleen");
     },
   });
 
@@ -119,7 +119,7 @@ export default function AgentChat() {
         dateStr={formatBriefDate(new Date(), "fi")}
         statusLabel="KÄYTÖSSÄ"
         title={label.name}
-        subtitle={`${label.role} — Henkilökohtainen asiantuntija`}
+        subtitle={`${label.role} – Henkilökohtainen asiantuntija`}
       />
 
       {/* Transcript */}

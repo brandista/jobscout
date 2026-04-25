@@ -244,7 +244,7 @@ function LanguagesSection({ languages, onSave }: { languages: string[]; onSave: 
     <InlineEditRow label="KIELET" onEdit={() => setEditing(!editing)}>
       {editing ? (
         <div>
-          <p className="text-xs text-slate-500 mb-2 italic">Esim. Suomi (äidinkieli), Englanti (erinomainen)</p>
+          <p className="text-xs text-slate-500 mb-2 italic">Esim. suomi (äidinkieli), englanti (erinomainen)</p>
           <input
             value={raw}
             onChange={(e) => setRaw(e.target.value)}
@@ -322,7 +322,7 @@ function CvUpload({ onParsed }: { onParsed: (data: any) => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const parseCV = trpc.profile.parseCV.useMutation({
     onSuccess: (data) => {
-      toast.success("CV parsittu — tarkista tiedot ja tallenna");
+      toast.success("CV parsittu – tarkista tiedot ja tallenna");
       onParsed(data);
     },
     onError: () => toast.error("CV:n parsinta epäonnistui"),
@@ -353,7 +353,7 @@ function CvUpload({ onParsed }: { onParsed: (data: any) => void }) {
         {parseCV.isPending ? (
           <p className="text-sm italic text-slate-400">Parsitaan CV:tä…</p>
         ) : (
-          <p className="text-sm italic text-slate-500">Raahaa CV tähän — PDF tai DOCX</p>
+          <p className="text-sm italic text-slate-500">Raahaa CV tähän – PDF tai DOCX</p>
         )}
       </div>
       <input
