@@ -111,45 +111,32 @@ export const appRouter = router({
           throw new Error("Could not extract text from file — is it a valid PDF or DOCX?");
         }
 
-        // Step 2: structured extraction with Anthropic
-        const Anthropic = (await import("@anthropic-ai/sdk")).default;
-        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+        // Step 2: structured extraction with OpenAI
+        const OpenAI = (await import("openai")).default;
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-        const prompt = `Extract structured CV/resume data. Return ONLY valid JSON with these fields (null for missing):
-{
-  "currentTitle": string|null,
-  "yearsOfExperience": number|null,
-  "skills": string[],
-  "languages": string[],
-  "degree": string|null,
-  "field": string|null,
-  "university": string|null,
-  "graduationYear": number|null,
-  "workHistory": [{"company":string,"title":string,"duration":string,"description":string}]
-}
-
-CV text:
-${text.slice(0, 12000)}`;
-
-        let response;
+        let completion;
         try {
-          response = await anthropic.messages.create({
-            model: "claude-haiku-4-5-20251001",
+          completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
             max_tokens: 1500,
-            messages: [{ role: "user", content: prompt }],
+            response_format: { type: "json_object" },
+            messages: [
+              {
+                role: "system",
+                content: `You are a CV parser. Extract structured data and return ONLY valid JSON with these fields (null for missing): currentTitle, yearsOfExperience (number), skills (array), languages (array), degree, field, university, graduationYear (number), workHistory (array with company, title, duration, description).`,
+              },
+              { role: "user", content: text.slice(0, 12000) },
+            ],
           });
         } catch (err) {
-          console.error("[parseCV] Anthropic call failed:", err);
+          console.error("[parseCV] OpenAI call failed:", err);
           throw new Error(`AI extraction failed: ${(err as Error).message}`);
         }
 
-        const raw = response.content[0];
-        if (raw.type !== "text") throw new Error("No text response from AI");
-        const cleaned = raw.text.replace(/```json\n?/gi, "").replace(/```\n?/gi, "").trim();
         try {
-          return JSON.parse(cleaned);
+          return JSON.parse(completion.choices[0].message.content || "{}");
         } catch {
-          console.error("[parseCV] JSON parse failed, raw:", cleaned.slice(0, 200));
           throw new Error("AI returned invalid JSON");
         }
       }),
