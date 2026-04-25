@@ -116,26 +116,28 @@ export async function upsertProfile(profile: InsertProfile) {
   
   const existing = await getProfileByUserId(profile.userId);
   if (existing) {
+    // Use COALESCE so that omitted fields (undefined → null) keep their existing value
+    const v = (x: any) => (x === undefined ? null : x);
     await db.execute(sql`
       UPDATE profiles SET
-        currentTitle = ${profile.currentTitle || null},
-        yearsOfExperience = ${profile.yearsOfExperience || null},
-        skills = ${profile.skills || null},
-        languages = ${profile.languages || null},
-        certifications = ${profile.certifications || null},
-        degree = ${profile.degree || null},
-        field = ${profile.field || null},
-        university = ${profile.university || null},
-        graduationYear = ${profile.graduationYear || null},
-        preferredLocations = ${profile.preferredLocations || null},
-        preferredJobTitles = ${profile.preferredJobTitles || null},
-        preferredIndustries = ${profile.preferredIndustries || null},
-        salaryMin = ${profile.salaryMin || null},
-        salaryMax = ${profile.salaryMax || null},
-        remotePreference = ${profile.remotePreference || null},
-        employmentTypes = ${profile.employmentTypes || null},
-        targetFunctions = ${profile.targetFunctions || null},
-        workHistory = ${profile.workHistory || null},
+        currentTitle = COALESCE(${v(profile.currentTitle)}, currentTitle),
+        yearsOfExperience = COALESCE(${v(profile.yearsOfExperience)}, yearsOfExperience),
+        skills = COALESCE(${v(profile.skills)}, skills),
+        languages = COALESCE(${v(profile.languages)}, languages),
+        certifications = COALESCE(${v(profile.certifications)}, certifications),
+        degree = COALESCE(${v(profile.degree)}, degree),
+        field = COALESCE(${v(profile.field)}, field),
+        university = COALESCE(${v(profile.university)}, university),
+        graduationYear = COALESCE(${v(profile.graduationYear)}, graduationYear),
+        preferredLocations = COALESCE(${v(profile.preferredLocations)}, preferredLocations),
+        preferredJobTitles = COALESCE(${v(profile.preferredJobTitles)}, preferredJobTitles),
+        preferredIndustries = COALESCE(${v(profile.preferredIndustries)}, preferredIndustries),
+        salaryMin = COALESCE(${v(profile.salaryMin)}, salaryMin),
+        salaryMax = COALESCE(${v(profile.salaryMax)}, salaryMax),
+        remotePreference = COALESCE(${v(profile.remotePreference)}, remotePreference),
+        employmentTypes = COALESCE(${v(profile.employmentTypes)}, employmentTypes),
+        targetFunctions = COALESCE(${v(profile.targetFunctions)}, targetFunctions),
+        workHistory = COALESCE(${v(profile.workHistory)}, workHistory),
         updatedAt = NOW()
       WHERE userId = ${profile.userId}
     `);
