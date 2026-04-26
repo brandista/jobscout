@@ -1,17 +1,22 @@
 import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 
+// Aligns with `events.eventType` enum in drizzle/schema.ts.
+// Keep in sync when adding new enum values.
 const EVENT_TYPE_LABELS: Record<string, string> = {
-  hiring_burst: "rekrytointipiikki",
+  yt_layoff: "yt-irtisanomiset",
+  yt_restructure: "yt-järjestely",
   funding: "rahoituskierros",
-  leadership_change: "johtomuutos",
+  new_unit: "uusi yksikkö",
   expansion: "laajennus",
-  ytj_change: "YTJ-muutos",
-  layoffs: "irtisanomiset",
+  acquisition: "yritysosto",
+  strategy_change: "strategiamuutos",
+  leadership_change: "johtomuutos",
+  other: "muu signaali",
 };
 
 export function TheBeat() {
-  const { data, isLoading } = trpc.brief.theBeat.useQuery();
+  const { data, isLoading, isError } = trpc.brief.theBeat.useQuery();
 
   return (
     <section className="py-6 border-b border-slate-900">
@@ -23,13 +28,19 @@ export function TheBeat() {
         </div>
       )}
 
-      {!isLoading && (!data || data.length === 0) && (
+      {!isLoading && isError && (
+        <p className="font-['DM_Sans'] italic text-amber-700 text-sm">
+          Signaaleja ei voitu ladata juuri nyt. Yritä uudelleen hetken kuluttua.
+        </p>
+      )}
+
+      {!isLoading && !isError && (!data || data.length === 0) && (
         <p className="font-['DM_Sans'] italic text-slate-400 text-sm">
           Watchlistillä ei ole aktiivisia signaaleja. Lisää yrityksiä seurantaan.
         </p>
       )}
 
-      {!isLoading && data && data.length > 0 && (
+      {!isLoading && !isError && data && data.length > 0 && (
         <div>
           {data.map((entry, idx) => (
             <div key={entry.companyId}>

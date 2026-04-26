@@ -1,10 +1,14 @@
 import { trpc } from "@/lib/trpc";
 import { Link } from "wouter";
 
+// Per-agent conversation pages don't exist yet (App.tsx routes /agents/:rest*
+// to a placeholder). Until they're implemented, link to the agents hub which
+// is the actual landing page where the user can pick the agent. Switch back
+// to per-agent paths once the routes are wired up.
 const AGENT_TO_PATH: Record<string, string> = {
-  signal_scout: "/agents/signal_scout",
-  career_coach: "/agents/career_coach",
-  job_analyzer: "/agents/job_analyzer",
+  signal_scout: "/agents",
+  career_coach: "/agents",
+  job_analyzer: "/agents",
 };
 
 export function AgentNotes() {

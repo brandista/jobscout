@@ -203,4 +203,46 @@ describe("selectLeadStory", () => {
     const result = selectLeadStory(input);
     expect(result.tier).toBe(6); // < 70 is the condition, so 70 → Tier 6
   });
+
+  // Cubic review: future-dated entries must NOT pass the freshness filters
+  it("Tier 1/2: future-dated match (postedAt > now) is excluded", () => {
+    const input: BriefInput = {
+      matches: [
+        // Negative hoursAgo — postedAt 5h in the future. Must NOT be picked even with score 95.
+        makeMatch({ totalScore: 95, postedAt: new Date(NOW.getTime() + 5 * 3600_000) }),
+      ],
+      watchlistSignals: [],
+      profileCompleteness: 80,
+      now: NOW,
+    };
+    const result = selectLeadStory(input);
+    expect(result.tier).toBeGreaterThanOrEqual(4); // future match must not surface as fresh
+  });
+
+  it("Tier 3: future-dated match is excluded from fresh72 window", () => {
+    const input: BriefInput = {
+      matches: [
+        makeMatch({ totalScore: 75, postedAt: new Date(NOW.getTime() + 50 * 3600_000) }), // 50h future
+      ],
+      watchlistSignals: [],
+      profileCompleteness: 80,
+      now: NOW,
+    };
+    const result = selectLeadStory(input);
+    expect(result.tier).toBeGreaterThanOrEqual(4);
+  });
+
+  it("Tier 4: future-dated watchlist signal is excluded", () => {
+    const input: BriefInput = {
+      matches: [],
+      watchlistSignals: [
+        makeSignal({ publishedAt: new Date(NOW.getTime() + 2 * 3600_000) }), // 2h future
+      ],
+      profileCompleteness: 80,
+      now: NOW,
+    };
+    const result = selectLeadStory(input);
+    expect(result.tier).toBeGreaterThanOrEqual(5); // future signal must not be picked as Tier 4
+    expect(result.kind).not.toBe("signal");
+  });
 });

@@ -51,6 +51,14 @@ function hoursAgo(date: Date, now: Date): number {
   return (now.getTime() - date.getTime()) / 3600_000;
 }
 
+// Returns true when `date` is between 0 and `windowHours` ago (inclusive).
+// Excludes future-dated entries (negative hoursAgo). Required because feeds
+// occasionally have postedAt/publishedAt in the future due to timezone or scrape bugs.
+function isFresh(date: Date, now: Date, windowHours: number): boolean {
+  const h = hoursAgo(date, now);
+  return h >= 0 && h <= windowHours;
+}
+
 function toMatchPayload(m: MatchEntry): MatchPayload {
   return { matchId: m.matchId, jobId: m.jobId, title: m.title, company: m.company,
     location: m.location, totalScore: m.totalScore, url: m.url };
@@ -70,8 +78,8 @@ export function selectLeadStory(input: BriefInput): LeadStoryResult {
   const now = input.now ?? new Date();
   const { matches, watchlistSignals, profileCompleteness } = input;
 
-  const fresh24 = matches.filter(m => m.postedAt && hoursAgo(m.postedAt, now) <= 24);
-  const fresh72 = matches.filter(m => m.postedAt && hoursAgo(m.postedAt, now) <= 72);
+  const fresh24 = matches.filter(m => m.postedAt && isFresh(m.postedAt, now, 24));
+  const fresh72 = matches.filter(m => m.postedAt && isFresh(m.postedAt, now, 72));
 
   // Tier 1: score ≥ 90, within 24h
   const tier1 = sortMatches(fresh24.filter(m => m.totalScore >= 90));
@@ -93,7 +101,7 @@ export function selectLeadStory(input: BriefInput): LeadStoryResult {
 
   // Tier 4: watchlist signal in last 24h
   const recentSignals = watchlistSignals
-    .filter(s => hoursAgo(s.publishedAt, now) <= 24)
+    .filter(s => isFresh(s.publishedAt, now, 24))
     .sort((a, b) => b.impactStrength - a.impactStrength);
   if (recentSignals.length > 0) {
     const s = recentSignals[0];

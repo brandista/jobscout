@@ -1,6 +1,13 @@
 import { trpc } from "@/lib/trpc";
 import type { ReactNode } from "react";
+import { Link } from "wouter";
 import type { MatchPayload, SignalPayload, ProfilePayload } from "../../../../../shared/lib/brief-logic";
+
+// Defense-in-depth: only allow http(s) hrefs to block javascript:/data: schemes.
+function isSafeHttpUrl(url: string | null | undefined): url is string {
+  if (!url) return false;
+  return /^https?:\/\//i.test(url);
+}
 
 function MetaRow({ items }: { items: (string | number | null | undefined | ReactNode)[] }) {
   const parts = items.filter(v => v !== null && v !== undefined && v !== "");
@@ -54,7 +61,7 @@ export function LeadStory() {
             <p className="font-['DM_Sans'] italic text-base md:text-lg text-slate-500 leading-relaxed mb-4">
               Vahva osuma profiiliisi — avaa ilmoitus ja arvioi sopivuus.
             </p>
-            {p.url && (
+            {isSafeHttpUrl(p.url) && (
               <a href={p.url} target="_blank" rel="noopener noreferrer"
                 className="text-[11px] uppercase tracking-[0.16em] font-bold text-slate-900 hover:opacity-70 transition-opacity">
                 Avaa juttu →
@@ -75,9 +82,9 @@ export function LeadStory() {
             <p className="font-['DM_Sans'] italic text-base md:text-lg text-slate-500 leading-relaxed mb-4">
               {p.summary}
             </p>
-            <a href="/companies" className="text-[11px] uppercase tracking-[0.16em] font-bold text-slate-900 hover:opacity-70 transition-opacity">
+            <Link href="/companies" className="text-[11px] uppercase tracking-[0.16em] font-bold text-slate-900 hover:opacity-70 transition-opacity">
               Avaa dossier →
-            </a>
+            </Link>
           </>
         );
       })()}
@@ -92,9 +99,9 @@ export function LeadStory() {
             <p className="font-['DM_Sans'] italic text-base md:text-lg text-slate-500 leading-relaxed mt-4 mb-4">
               Täydennä profiilisi saadaksesi parempia matchauksia.
             </p>
-            <a href="/profile" className="text-[11px] uppercase tracking-[0.16em] font-bold text-slate-900 hover:opacity-70 transition-opacity">
+            <Link href="/profile" className="text-[11px] uppercase tracking-[0.16em] font-bold text-slate-900 hover:opacity-70 transition-opacity">
               Täydennä profiili →
-            </a>
+            </Link>
           </>
         );
       })()}
@@ -107,9 +114,9 @@ export function LeadStory() {
           <p className="font-['DM_Sans'] italic text-base md:text-lg text-slate-500 leading-relaxed mt-4 mb-4">
             Aloita täyttämällä profiilisi — löydämme sinulle sopivat paikat.
           </p>
-          <a href="/profile" className="text-[11px] uppercase tracking-[0.16em] font-bold text-slate-900 hover:opacity-70 transition-opacity">
+          <Link href="/profile" className="text-[11px] uppercase tracking-[0.16em] font-bold text-slate-900 hover:opacity-70 transition-opacity">
             Luo profiili →
-          </a>
+          </Link>
         </>
       )}
     </section>
