@@ -47,7 +47,7 @@ export const briefRouter = router({
                    e.eventType, e.publishedAt, e.impactStrength
             FROM events e
             JOIN companies c ON e.companyId = c.id
-            WHERE e.companyId IN (${sql.raw(companyIds.join(","))})
+            WHERE e.companyId IN (${sql.join(companyIds.map(id => sql`${id}`), sql`, `)})
               AND e.publishedAt > DATE_SUB(NOW(), INTERVAL 24 HOUR)
             ORDER BY e.impactStrength DESC
             LIMIT 10
@@ -235,7 +235,7 @@ Vastaa pelkkä teksti.`,
             SELECT e.headline, c.name as companyName, e.publishedAt, e.eventType
             FROM events e
             JOIN companies c ON e.companyId = c.id
-            WHERE e.companyId IN (${sql.raw(companyIds.join(","))})
+            WHERE e.companyId IN (${sql.join(companyIds.map(id => sql`${id}`), sql`, `)})
               AND e.publishedAt > DATE_SUB(NOW(), INTERVAL 24 HOUR)
             ORDER BY e.publishedAt DESC
             LIMIT 6
